@@ -26,14 +26,6 @@ const wins=new Map();let topZ=10,activeKey=null,folderSerial=0;
 function folderData(w) {
   const type = w.type;
 
-  // Only available items appear in the public marketplace.
-  const availableItems = items.filter(item =>
-    (item.status || 'available') === 'available'
-  );
-  
-  function folderData(w) {
-  const type = w.type;
-
   const availableItems = items.filter(item =>
     (item.status || 'available') === 'available'
   );
@@ -55,11 +47,9 @@ function folderData(w) {
   if (type === 'Search') {
     const query = (w.query || '').trim().toLowerCase();
 
-    const searchable = availableItems;
+    if (!query) return availableItems;
 
-    if (!query) return searchable;
-
-    return searchable.filter(item =>
+    return availableItems.filter(item =>
       [
         item.title,
         item.category,
@@ -210,7 +200,6 @@ function refreshFolders() {
 
   updateDownloadsCount();
 }
-
 
 function updateDownloadsCount(){const count=$('[data-folder="Downloads"] .desktop-count');if(count)count.textContent=saved.length?String(saved.length):''}
 function saveItem(id,force=false){const exists=saved.includes(id);if(force&&exists){toast('Already saved in Downloads.');return}const next=exists&&!force?saved.filter(x=>x!==id):[...saved,id];try{localStorage.setItem('barter-saved',JSON.stringify(next));saved=next;refreshFolders();document.querySelectorAll(`[data-save="${id}"]`).forEach(b=>{b.textContent=saved.includes(id)?'✓ Saved in Downloads':'↓ Save to Downloads';b.setAttribute('aria-pressed',String(saved.includes(id)))});toast(saved.includes(id)?'Saved to Downloads. Open the folder on your desktop.':'Removed from Downloads.')}catch{toast('Could not save. Browser storage may be full.')}}
