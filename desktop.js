@@ -1,5 +1,5 @@
 const read=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch{return d}};
-let items=[...seed],saved=read('barter-saved',[]);
+let items=[],saved=read('barter-saved',[]);
 let tradeitDb=null,tradeitDbUserId=null;
 const currentUserId=async()=>{if(!tradeitDb)return null;const {data:sessionData}=await tradeitDb.auth.getSession();if(!sessionData.session)return null;const {data,error}=await tradeitDb.auth.getUser();if(error)throw error;return data.user?.id||null};
 const dbListingToItem=r=>({id:r.id,title:r.title,status: r.status || 'available',category:r.category,location:r.location||'',size:r.size||'',weight:r.weight||'',desc:r.short_description||'',long:r.description||'',want:r.trade_want||'',condition:r.item_condition||'',date:r.available_from||r.created_at?.slice(0,10)||'2026-01-01',owner:r.owner_display||'TradeIt member',ownerId:r.user_id,status:r.status||'available',images:Array.isArray(r.images)&&r.images.length?r.images:[]});
@@ -13,7 +13,7 @@ async function loadSharedListings() {
 
   if (error) throw error;
 
-  items = [...(data || []).map(dbListingToItem), ...seed];
+  items = (data || []).map(dbListingToItem);
   refreshFolders();
 }
 async function initializeListings(){try{console.log('TradeIt: initializeListings called');const module=await import('./supabase-client.js');tradeitDb=module.supabase;tradeitDbUserId=await currentUserId();tradeitDb.auth.onAuthStateChange((_event,session)=>{tradeitDbUserId=session?.user?.id||null;loadSharedListings().catch(console.error);if(wins.has('trade-inbox'))setTimeout(()=>refreshTradeInbox(),0)});await loadSharedListings()}catch(error){console.error('Could not load shared listings:',error);toast('Online listings could not load. Showing sample items.')}}
@@ -22,6 +22,47 @@ const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"']/g,c=>({'&
 let toastTimer;const toast=s=>{clearTimeout(toastTimer);$('#toast').textContent=s;$('#toast').classList.add('show');toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),4200)};
 const folders=['Trade Inbox','All items','Home & living','Electronics','Clothing','Outdoors','Hobbies','Books','Search','Downloads','Upload'];
 const wins=new Map();let topZ=10,activeKey=null,folderSerial=0;
+
+function folderData(w) {
+  const type = w.type;
+
+  if (type === 'All items') {
+    return items;
+  }
+
+  if (type === 'Downloads') {
+    return items.filter(item => saved.includes(item.id));
+  }
+
+  if (type === 'Uploads') {
+    return items.filter(item =>
+      tradeitDbUserId && item.ownerId === tradeitDbUserId
+    );
+  }
+
+  if (type === 'Search') {
+    const query = (w.query || '').trim().toLowerCase();
+
+    if (!query) return items;
+
+    return items.filter(item =>
+      [
+        item.title,
+        item.category,
+        item.location,
+        item.desc,
+        item.long,
+        item.want
+      ].some(value =>
+        String(value || '').toLowerCase().includes(query)
+      )
+    );
+  }
+
+  return items.filter(item => item.category === type);
+}
+
+
 function icon(type,cls=''){const special=type==='Search'?'<span class="glass-icon"></span>':type==='Downloads'?'<span class="download-arrow">↓</span>':'';if(type==='Upload')return `<span class="upload-icon ${cls}" aria-hidden="true"><span>↑</span><i></i></span>`;return `<span class="folder-icon ${cls}" aria-hidden="true"><i></i>${special}</span>`}
 function activateIcon(button,run){button.onclick=e=>{const parent=button.parentElement;parent.querySelectorAll('.selected').forEach(x=>x.classList.remove('selected'));button.classList.add('selected');if(e.pointerType==='touch')run()};button.ondblclick=run;button.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();run()}}}
 function focusWindow(key){const w=wins.get(key);if(!w)return;w.minimized=false;w.el.hidden=false;w.el.style.zIndex=++topZ;activeKey=key;wins.forEach((x,k)=>x.el.classList.toggle('inactive',k!==key));renderTasks()}
@@ -131,10 +172,33 @@ function renderFiles(w) {
   w.el.querySelector('.folder-path').textContent =
     `Desktop > ${w.type}`;
 }
-function renderFiles(w){const found=folderData(w),area=w.el.querySelector('.file-area');if(!area)return;area.classList.toggle('list-view',w.view==='list');area.innerHTML=found.length?found.map(i=>`<button class="listing-file ${w.selected===i.id?'selected':''}" data-item="${esc(i.id)}" aria-label="${esc(i.title)}. Double-click to open"><span class="file-preview"><img src="${esc(i.images[0]||'')}" alt="${esc(i.title)}" loading="lazy"><span class="file-corner">▧</span><span class="file-photo-count">${i.images.length} photos</span></span><span class="file-name">${esc(i.title)}<small>.trade</small>${w.type==='Uploads'?`<span class="listing-state listing-state-${esc(i.status||'available')}">${esc(i.status||'available')}</span>`:''}</span><span class="file-description">${esc(i.desc)}</span><span class="file-meta">${esc(i.location)}<br>${esc(i.size)} · ${esc(i.weight)}</span></button>`).join(''):`<div class="folder-empty">${icon(w.type)}<strong>${w.type==='Downloads'?'Your Downloads folder is empty.':w.type==='Search'?'No matching listings.':'Nothing in this folder yet.'}</strong><p>${w.type==='Downloads'?'Open a listing and choose “Save to Downloads.”':w.type==='Search'?'Try an item name, category, or location.':'Use Upload to add an item.'}</p></div>`;area.querySelectorAll('[data-item]').forEach(b=>{activateIcon(b,()=>openItem(b.dataset.item));const click=b.onclick;b.onclick=e=>{click(e);w.selected=b.dataset.item;w.el.querySelector('[data-action="open"]').disabled=false;w.el.querySelector('[data-action="save"]').disabled=false;updateSide(w,items.find(i=>i.id===w.selected))}});w.el.querySelector('.status-count').textContent=`${found.length} ${found.length===1?'listing':'listings'}`;w.el.querySelector('.folder-path').textContent=`Desktop > ${w.type}`}
 function updateSide(w,item){const side=w.el.querySelector('.selected-info');if(!side)return;side.innerHTML=item?`<strong>${esc(item.title)}</strong><p>${esc(item.desc)}</p><dl><dt>Location</dt><dd>${esc(item.location)}</dd><dt>Size</dt><dd>${esc(item.size)}</dd><dt>Weight</dt><dd>${esc(item.weight)}</dd></dl><button class="text-action" data-open-selected>Open listing →</button>`:'<p>Select a file to see its details.<br><br>Double-click to open it.</p>';if(item)side.querySelector('button').onclick=()=>openItem(item.id)}
 function openFolder(type){if(type==='Trade Inbox'){openTradeInbox();return}if(type==='Upload'){listing();return}const key='folder-'+type,w=createWindow(key,type==='Search'?'Search — tradeit':type,type);if(w.ready)return;w.ready=true;w.view='tiles';w.query='';const content=w.el.querySelector('.window-content');content.innerHTML=`<div class="window-menu"><button data-menu="upload">File</button><button data-menu="view">View</button><button data-menu="help">Help</button><span>tradeit</span></div><div class="explorer-toolbar"><button class="tool-button" data-action="desktop"><span class="round-back">←</span>Desktop</button><i></i><button class="tool-button" data-action="open" disabled>▧ Open</button><button class="tool-button" data-action="save" disabled>↓ Save</button><button class="tool-button" data-action="search">⌕ Search</button><button class="tool-button" data-action="view">▦ View</button></div><div class="addressbar"><span>Address</span><div>${icon(type,'tiny')}<span class="folder-path">Desktop > ${esc(type)}</span></div><button class="go-button" data-action="refresh" aria-label="Refresh folder">↻</button></div>${type==='Search'?'<form class="folder-search"><label for="folderSearch">Search for a listing</label><div><input type="search" id="folderSearch" placeholder="Try camera, books, or Seattle…" autocomplete="off"><button class="xp-button">Search</button></div><small>Search item names, descriptions, categories, and locations.</small></form>':''}<div class="explorer-body"><aside class="explorer-sidebar"><div class="side-box"><h3>Trading tasks</h3><div><button data-side="Upload">↑ Upload an item</button><button data-side="Search">⌕ Search listings</button><button data-side="Downloads">↓ Saved downloads</button></div></div><div class="side-box"><h3>Other places</h3><div>${['All items','Home & living','Electronics','Outdoors','Books'].map(t=>`<button data-side="${t}">${icon(t,'tiny')}${esc(t)}</button>`).join('')}<button data-side="Uploads">${icon('Uploads','tiny')}My uploads</button></div></div><div class="side-box"><h3>Details</h3><div class="selected-info"><p>Select a file to see its details.<br><br>Double-click to open it.</p></div></div></aside><div class="file-area" aria-label="Listings in ${esc(type)}"></div></div><div class="window-status"><span class="status-count"></span><span>${type==='Downloads'?'Saved items · kept in this browser':'Double-click a file to open its listing'}</span></div>`;const q=s=>w.el.querySelector(s);q('[data-action="desktop"]').onclick=showDesktop;q('[data-action="open"]').onclick=()=>w.selected&&openItem(w.selected);q('[data-action="save"]').onclick=()=>w.selected&&saveItem(w.selected,true);q('[data-action="search"]').onclick=()=>openFolder('Search');q('[data-action="view"]').onclick=()=>{w.view=w.view==='tiles'?'list':'tiles';renderFiles(w)};q('[data-action="refresh"]').onclick=()=>renderFiles(w);q('[data-menu="upload"]').onclick=listing;q('[data-menu="view"]').onclick=q('[data-action="view"]').onclick;q('[data-menu="help"]').onclick=help;w.el.querySelectorAll('[data-side]').forEach(b=>b.onclick=()=>openFolder(b.dataset.side));if(type==='Search'){const input=q('#folderSearch');q('.folder-search').onsubmit=e=>{e.preventDefault();w.query=input.value;renderFiles(w)};input.oninput=()=>{w.query=input.value;renderFiles(w)}}renderFiles(w)}
-function refreshFolders(){wins.forEach(w=>{if(w.type!=='item'&&w.type!=='Trade Inbox')renderFiles(w)});updateDownloadsCount()}
+
+function refreshFolders() {
+  const folderTypes = [
+    'All items',
+    'Home & living',
+    'Electronics',
+    'Clothing',
+    'Outdoors',
+    'Hobbies',
+    'Books',
+    'Search',
+    'Downloads',
+    'Uploads'
+  ];
+
+  wins.forEach(w => {
+    if (folderTypes.includes(w.type)) {
+      renderFiles(w);
+    }
+  });
+
+  updateDownloadsCount();
+}
+
+
 function updateDownloadsCount(){const count=$('[data-folder="Downloads"] .desktop-count');if(count)count.textContent=saved.length?String(saved.length):''}
 function saveItem(id,force=false){const exists=saved.includes(id);if(force&&exists){toast('Already saved in Downloads.');return}const next=exists&&!force?saved.filter(x=>x!==id):[...saved,id];try{localStorage.setItem('barter-saved',JSON.stringify(next));saved=next;refreshFolders();document.querySelectorAll(`[data-save="${id}"]`).forEach(b=>{b.textContent=saved.includes(id)?'✓ Saved in Downloads':'↓ Save to Downloads';b.setAttribute('aria-pressed',String(saved.includes(id)))});toast(saved.includes(id)?'Saved to Downloads. Open the folder on your desktop.':'Removed from Downloads.')}catch{toast('Could not save. Browser storage may be full.')}}
 function openItem(id){const i=items.find(x=>x.id===id);if(!i){toast('This listing could not be found.');return}const w=createWindow('item-'+id,i.title+' — Listing','item');if(w.ready)return;w.ready=true;w.el.classList.add('listing-window');w.el.querySelector('.window-content').innerHTML=`<div class="item-toolbar"><span>▧ ${esc(i.title)}.trade</span><button class="xp-button" data-folder-open>${icon(i.category,'tiny')}Open category</button></div><div class="item-scroll"><div class="item-layout"><div class="item-gallery"><img class="item-photo" src="${esc(i.images[0]||'')}" alt="${esc(i.title)} — photo 1"><div class="photo-thumbs">${i.images.map((p,n)=>`<button class="${n===0?'chosen':''}" data-photo="${n}" aria-label="View photo ${n+1} of ${esc(i.title)}"><img src="${esc(p)}" alt="Photo ${n+1}"></button>`).join('')}</div><span class="photo-label">1 of ${i.images.length} photos</span><div class="listing-owner">Listed by ${esc(i.owner)}<small>${seed.some(x=>x.id===i.id)?'Sample listing':'Shared listing · TradeIt'}</small></div></div><div class="item-info"><span class="item-category">${esc(i.category)} / Open to trades</span><h1>${esc(i.title)}</h1><span class="condition">${esc(i.condition)}</span><dl class="item-specs"><div><dt>Location</dt><dd>${esc(i.location)}</dd></div><div><dt>Size</dt><dd>${esc(i.size)}</dd></div><div><dt>Weight</dt><dd>${esc(i.weight)}</dd></div><div><dt>Available from</dt><dd>${new Date(i.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</dd></div></dl><h2>About this item</h2><p>${esc(i.long)}</p><div class="trade-wanted"><h2>Looking to trade for</h2><p>${esc(i.want)}</p></div><div class="item-actions"><button class="xp-button blue" data-offer>⇄ Propose a trade</button><button class="xp-button" data-save="${esc(id)}" aria-pressed="${saved.includes(id)}">${saved.includes(id)?'✓ Saved in Downloads':'↓ Save to Downloads'}</button></div></div></div></div><div class="window-status"><span>tradeit listing</span><span>${i.images.length} photos · ${esc(i.weight)}</span></div>`;const q=s=>w.el.querySelector(s);q('[data-folder-open]').onclick=()=>openFolder(i.category);q('[data-offer]').onclick=()=>offer(i);q('[data-save]').onclick=()=>saveItem(id);w.el.querySelectorAll('[data-photo]').forEach(b=>b.onclick=()=>{const n=Number(b.dataset.photo);q('.item-photo').src=i.images[n];q('.item-photo').alt=`${i.title} — photo ${n+1}`;q('.photo-label').textContent=`${n+1} of ${i.images.length} photos`;w.el.querySelectorAll('[data-photo]').forEach(t=>t.classList.toggle('chosen',t===b))})}
