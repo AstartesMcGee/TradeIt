@@ -79,7 +79,8 @@
     if(error)throw error;
     session=data.session;updateLabel();
     const w=wins.get(key);if(w && !busy)render(w,recovery?'password':'login');
-  }).catch(() => {
+}).catch((error) => {
+    console.error('Supabase initialization failed:', error);
     connectionError='Couldn’t connect to the account service. Check your internet connection and refresh to try again.';
     client=null;const w=wins.get(key);if(w)render(w,'login');
   });
