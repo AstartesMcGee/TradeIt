@@ -50,23 +50,326 @@ async function refreshTradeInbox(selected){
     else detail.innerHTML='<p class="trade-muted">Select an offer to see messages and actions.</p>';
   }catch(err){list.innerHTML=`<p class="trade-error">${esc(tradeError(err))}</p>`;detail.innerHTML='<p class="trade-muted">Sign in to view your trade offers.</p>'}
 }
-async function showTradeDetail(id){
-  const w=wins.get('trade-inbox');if(!w)return;
-  const t=w.trades?.find(x=>x.id===id);if(!t)return;
-  w.selectedTrade=id;
-  w.el.querySelectorAll('.trade-entry').forEach(b=>b.classList.toggle('selected',b.dataset.tradeId===id));
-  const detail=w.el.querySelector('.trade-detail');detail.innerHTML='<p>Loading conversation...</p>';
-  const uid=w.tradeUid,recipient=t.recipient_id===uid,proposer=t.proposer_id===uid;
-  try{
-    const {data:messages,error}=await tradeitDb.from('trade_messages').select('id,sender_id,body,created_at').eq('trade_id',id).order('created_at',{ascending:true});
-    if(error)throw error;
-    const names=w.tradeNames;
-    const controls=t.status==='pending'?(recipient?'<button data-trade-action="accepted" class="xp-button blue">Accept offer</button><button data-trade-action="declined" class="xp-button">Decline</button>':proposer?'<button data-trade-action="cancelled" class="xp-button">Cancel offer</button>':''):t.status==='accepted'?`<button data-trade-confirm class="xp-button blue" ${recipient?t.recipient_confirmed_at?'disabled':'':t.proposer_confirmed_at?'disabled':''}>${recipient?t.recipient_confirmed_at?'You confirmed':'Confirm exchange':t.proposer_confirmed_at?'You confirmed':'Confirm exchange'}</button>`:'';
-    const mine=recipient?t.recipient_confirmed_at:t.proposer_confirmed_at;
-    detail.innerHTML=`<div class="trade-detail-header"><h2>${esc(names[t.offered_listing_id]||'Offered item')} ⇄ ${esc(names[t.requested_listing_id]||'Requested item')}</h2><p>Status: <strong>${esc(t.status)}</strong> · ${recipient?'Incoming offer':'Outgoing offer'}</p>${t.status==='accepted'?`<p>${mine?'You have confirmed the exchange.':'Confirm only after the physical exchange has happened.'} ${t.proposer_confirmed_at&&t.recipient_confirmed_at?'Both confirmed.':'Both participants must confirm.'}</p>`:''}<div class="trade-actions">${controls}</div></div><div class="trade-messages">${messages?.length?messages.map(m=>`<div class="trade-message ${m.sender_id===uid?'mine':''}"><strong>${m.sender_id===uid?'You':'Other trader'}</strong><p>${esc(m.body)}</p><small>${esc(tradeDate(m.created_at))}</small></div>`).join(''):'<p class="trade-muted">No messages yet.</p>'}</div>${['pending','accepted'].includes(t.status)?'<form class="trade-message-form"><label>Send a message<textarea name="body" required maxlength="2000" placeholder="Write a message to the other trader..."></textarea></label><button class="xp-button blue">Send message</button></form>':'<p class="trade-muted">This trade is closed; messaging is disabled.</p>'}<p class="trade-error" data-trade-error role="status"></p>`;
-    detail.querySelectorAll('[data-trade-action]').forEach(b=>b.onclick=async()=>{if(!confirm(`Are you sure you want to ${b.dataset.tradeAction} this offer?`))return;b.disabled=true;try{const {error}=await tradeitDb.rpc('respond_to_trade',{p_trade_id:id,p_action:b.dataset.tradeAction});if(error)throw error;await loadSharedListings();await refreshTradeInbox(id);toast('Trade updated.')}catch(err){detail.querySelector('[data-trade-error]').textContent=tradeError(err);b.disabled=false}});
-    const confirmButton=detail.querySelector('[data-trade-confirm]');if(confirmButton)confirmButton.onclick=async()=>{if(!confirm('Confirm that you have physically exchanged the items? This cannot be undone.'))return;confirmButton.disabled=true;try{const {error}=await tradeitDb.rpc('confirm_trade_completion',{p_trade_id:id});if(error)throw error;await loadSharedListings();await refreshTradeInbox(id);toast('Confirmation recorded.')}catch(err){detail.querySelector('[data-trade-error]').textContent=tradeError(err);confirmButton.disabled=false}};
-    const form=detail.querySelector('.trade-message-form');if(form)form.onsubmit=async e=>{e.preventDefault();const button=form.querySelector('button'),body=form.elements.body.value.trim();if(!body)return;button.disabled=true;try{const {error}=await tradeitDb.from('trade_messages').insert({trade_id:id,sender_id:uid,body});if(error)throw error;await showTradeDetail(id)}catch(err){detail.querySelector('[data-trade-error]').textContent=tradeError(err);button.disabled=false}};
-    detail.querySelector('.trade-messages').scrollTop=detail.querySelector('.trade-messages').scrollHeight;
-  }catch(err){detail.innerHTML=`<p class="trade-error">${esc(tradeError(err))}</p>`}
+async function showTradeDetail(id) {
+  const w = wins.get('trade-inbox');
+  if (!w) return;
+
+  const t = w.trades?.find(x => x.id === id);
+  if (!t) return;
+
+  w.selectedTrade = id;
+
+  w.el.querySelectorAll('.trade-entry').forEach(b =>
+    b.classList.toggle('selected', b.dataset.tradeId === id)
+  );
+
+  const detail = w.el.querySelector('.trade-detail');
+  detail.innerHTML = '<p>Loading conversation...</p>';
+
+  const uid = w.tradeUid;
+  const recipient = t.recipient_id === uid;
+  const proposer = t.proposer_id === uid;
+
+  try {
+    const { data: messages, error } = await tradeitDb
+      .from('trade_messages')
+      .select('id,sender_id,body,created_at')
+      .eq('trade_id', id)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    const names = w.tradeNames;
+    const mine = recipient
+      ? t.recipient_confirmed_at
+      : t.proposer_confirmed_at;
+
+    const cancellationRequestedByMe = recipient
+      ? t.recipient_cancel_requested_at
+      : t.proposer_cancel_requested_at;
+
+    const cancellationRequestedByOther = recipient
+      ? t.proposer_cancel_requested_at
+      : t.recipient_cancel_requested_at;
+
+    const completionStarted =
+      t.proposer_confirmed_at || t.recipient_confirmed_at;
+
+    let controls = '';
+
+    if (t.status === 'pending') {
+      if (recipient) {
+        controls = `
+          <button data-trade-action="accepted" class="xp-button blue">
+            Accept offer
+          </button>
+          <button data-trade-action="declined" class="xp-button">
+            Decline
+          </button>
+        `;
+      } else if (proposer) {
+        controls = `
+          <button data-trade-action="cancelled" class="xp-button">
+            Withdraw offer
+          </button>
+        `;
+      }
+    }
+
+    if (t.status === 'accepted') {
+      controls = `
+        <button
+          data-trade-confirm
+          class="xp-button blue"
+          ${mine ? 'disabled' : ''}
+        >
+          ${mine ? 'You confirmed' : 'Confirm exchange'}
+        </button>
+      `;
+
+      if (!completionStarted) {
+        controls += `
+          <button
+            data-trade-cancel
+            class="xp-button"
+            ${cancellationRequestedByMe ? 'disabled' : ''}
+          >
+            ${
+              cancellationRequestedByMe
+                ? 'Cancellation requested'
+                : cancellationRequestedByOther
+                  ? 'Agree to cancel'
+                  : 'Request cancellation'
+            }
+          </button>
+        `;
+      }
+    }
+
+    let cancellationNotice = '';
+
+    if (t.status === 'accepted' && !completionStarted) {
+      if (cancellationRequestedByMe) {
+        cancellationNotice = `
+          <p>
+            You have requested cancellation.
+            Waiting for the other trader to agree.
+          </p>
+        `;
+      } else if (cancellationRequestedByOther) {
+        cancellationNotice = `
+          <p>
+            The other trader wants to cancel this trade.
+            Agreeing will release both reserved items.
+          </p>
+        `;
+      }
+    }
+
+    detail.innerHTML = `
+      <div class="trade-detail-header">
+        <h2>
+          ${esc(names[t.offered_listing_id] || 'Offered item')}
+          ⇄
+          ${esc(names[t.requested_listing_id] || 'Requested item')}
+        </h2>
+
+        <p>
+          Status: <strong>${esc(t.status)}</strong>
+          · ${recipient ? 'Incoming offer' : 'Outgoing offer'}
+        </p>
+
+        ${
+          t.status === 'accepted'
+            ? `<p>
+                ${
+                  mine
+                    ? 'You have confirmed the exchange.'
+                    : 'Confirm only after the physical exchange has happened.'
+                }
+                Both participants must confirm completion.
+              </p>`
+            : ''
+        }
+
+        ${cancellationNotice}
+
+        <div class="trade-actions">
+          ${controls}
+        </div>
+      </div>
+
+      <div class="trade-messages">
+        ${
+          messages?.length
+            ? messages.map(m => `
+                <div class="trade-message ${m.sender_id === uid ? 'mine' : ''}">
+                  <strong>
+                    ${m.sender_id === uid ? 'You' : 'Other trader'}
+                  </strong>
+                  <p>${esc(m.body)}</p>
+                  <small>${esc(tradeDate(m.created_at))}</small>
+                </div>
+              `).join('')
+            : '<p class="trade-muted">No messages yet.</p>'
+        }
+      </div>
+
+      ${
+        ['pending', 'accepted'].includes(t.status)
+          ? `<form class="trade-message-form">
+              <label>
+                Send a message
+                <textarea
+                  name="body"
+                  required
+                  maxlength="2000"
+                  placeholder="Write a message to the other trader..."
+                ></textarea>
+              </label>
+              <button class="xp-button blue">Send message</button>
+            </form>`
+          : '<p class="trade-muted">This trade is closed; messaging is disabled.</p>'
+      }
+
+      <p class="trade-error" data-trade-error role="status"></p>
+    `;
+
+    // Accept, decline, or withdraw a pending offer.
+    detail.querySelectorAll('[data-trade-action]').forEach(b => {
+      b.onclick = async () => {
+        if (!confirm(`Are you sure you want to ${b.textContent.trim().toLowerCase()}?`)) {
+          return;
+        }
+
+        b.disabled = true;
+
+        try {
+          const { error } = await tradeitDb.rpc('respond_to_trade', {
+            p_trade_id: id,
+            p_action: b.dataset.tradeAction
+          });
+
+          if (error) throw error;
+
+          await loadSharedListings();
+          await refreshTradeInbox(id);
+          toast('Trade updated.');
+        } catch (err) {
+          detail.querySelector('[data-trade-error]').textContent =
+            tradeError(err);
+          b.disabled = false;
+        }
+      };
+    });
+
+    // Confirm the physical exchange.
+    const confirmButton = detail.querySelector('[data-trade-confirm]');
+
+    if (confirmButton) {
+      confirmButton.onclick = async () => {
+        if (!confirm(
+          'Confirm that you have physically exchanged the items? This cannot be undone.'
+        )) return;
+
+        confirmButton.disabled = true;
+
+        try {
+          const { error } = await tradeitDb.rpc(
+            'confirm_trade_completion',
+            { p_trade_id: id }
+          );
+
+          if (error) throw error;
+
+          await loadSharedListings();
+          await refreshTradeInbox(id);
+          toast('Confirmation recorded.');
+        } catch (err) {
+          detail.querySelector('[data-trade-error]').textContent =
+            tradeError(err);
+          confirmButton.disabled = false;
+        }
+      };
+    }
+
+    // Request or approve mutual cancellation.
+    const cancelButton = detail.querySelector('[data-trade-cancel]');
+
+    if (cancelButton) {
+      cancelButton.onclick = async () => {
+        const message = cancellationRequestedByOther
+          ? 'Agree to cancel this trade? Both items will become available again.'
+          : 'Request cancellation? The other trader must agree before the items are released.';
+
+        if (!confirm(message)) return;
+
+        cancelButton.disabled = true;
+
+        try {
+          const { error } = await tradeitDb.rpc(
+            'request_trade_cancellation',
+            { p_trade_id: id }
+          );
+
+          if (error) throw error;
+
+          await loadSharedListings();
+          await refreshTradeInbox(id);
+
+          toast(
+            cancellationRequestedByOther
+              ? 'Trade cancelled. Both items are available again.'
+              : 'Cancellation request recorded.'
+          );
+        } catch (err) {
+          detail.querySelector('[data-trade-error]').textContent =
+            tradeError(err);
+          cancelButton.disabled = false;
+        }
+      };
+    }
+
+    // Send trade messages.
+    const form = detail.querySelector('.trade-message-form');
+
+    if (form) {
+      form.onsubmit = async e => {
+        e.preventDefault();
+
+        const button = form.querySelector('button');
+        const body = form.elements.body.value.trim();
+
+        if (!body) return;
+
+        button.disabled = true;
+
+        try {
+          const { error } = await tradeitDb
+            .from('trade_messages')
+            .insert({
+              trade_id: id,
+              sender_id: uid,
+              body
+            });
+
+          if (error) throw error;
+
+          await showTradeDetail(id);
+        } catch (err) {
+          detail.querySelector('[data-trade-error]').textContent =
+            tradeError(err);
+          button.disabled = false;
+        }
+      };
+    }
+
+    detail.querySelector('.trade-messages').scrollTop =
+      detail.querySelector('.trade-messages').scrollHeight;
+
+  } catch (err) {
+    detail.innerHTML = `
+      <p class="trade-error">${esc(tradeError(err))}</p>
+    `;
+  }
 }
