@@ -65,3 +65,18 @@ dialog{padding:0;border:3px solid #0758c7;border-top:0;border-radius:7px 7px 3px
   color: #59677a;
   border: 1px solid #b6bfcc;
 }
+
+
+.listing-file .file-name {
+  display: block;
+  width: 100%;
+  text-align: center;
+}
+
+.listing-file .listing-status {
+  display: block;
+  position: static;
+  clear: both;
+  margin: 6px auto;
+  flex-shrink: 0;
+}
