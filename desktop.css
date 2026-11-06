@@ -26,3 +26,42 @@ dialog{padding:0;border:3px solid #0758c7;border-top:0;border-radius:7px 7px 3px
 #desktop::before{content:"";position:absolute;inset:0;pointer-events:none;background:var(--desktop-wallpaper,none) center/cover no-repeat;opacity:0;transition:opacity .3s ease}
 #desktop.wallpaper-ready::before{opacity:1}
 @media(prefers-reduced-motion:reduce){#desktop::before{transition:none}}
+
+/* Separate listing filenames from status labels */
+.listing-file .file-name {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+/* Status badge on its own line */
+.listing-file .listing-status {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 7px auto 0;
+  padding: 3px 9px;
+  border-radius: 3px;
+  font: bold 10px Tahoma, sans-serif;
+  white-space: nowrap;
+}
+
+/* Status colors */
+.listing-status.available {
+  background: #e0f1d6;
+  color: #35752c;
+  border: 1px solid #a4c991;
+}
+
+.listing-status.reserved {
+  background: #fff0c5;
+  color: #916000;
+  border: 1px solid #dfbd68;
+}
+
+.listing-status.traded {
+  background: #e1e5ec;
+  color: #59677a;
+  border: 1px solid #b6bfcc;
+}
