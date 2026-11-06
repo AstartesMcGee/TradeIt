@@ -26,8 +26,20 @@ const wins=new Map();let topZ=10,activeKey=null,folderSerial=0;
 function folderData(w) {
   const type = w.type;
 
+  // Only available items appear in the public marketplace.
+  const availableItems = items.filter(item =>
+    (item.status || 'available') === 'available'
+  );
+  
+  function folderData(w) {
+  const type = w.type;
+
+  const availableItems = items.filter(item =>
+    (item.status || 'available') === 'available'
+  );
+
   if (type === 'All items') {
-    return items;
+    return availableItems;
   }
 
   if (type === 'Downloads') {
@@ -43,9 +55,11 @@ function folderData(w) {
   if (type === 'Search') {
     const query = (w.query || '').trim().toLowerCase();
 
-    if (!query) return items;
+    const searchable = availableItems;
 
-    return items.filter(item =>
+    if (!query) return searchable;
+
+    return searchable.filter(item =>
       [
         item.title,
         item.category,
@@ -59,9 +73,8 @@ function folderData(w) {
     );
   }
 
-  return items.filter(item => item.category === type);
+  return availableItems.filter(item => item.category === type);
 }
-
 
 function icon(type,cls=''){const special=type==='Search'?'<span class="glass-icon"></span>':type==='Downloads'?'<span class="download-arrow">↓</span>':'';if(type==='Upload')return `<span class="upload-icon ${cls}" aria-hidden="true"><span>↑</span><i></i></span>`;return `<span class="folder-icon ${cls}" aria-hidden="true"><i></i>${special}</span>`}
 function activateIcon(button,run){button.onclick=e=>{const parent=button.parentElement;parent.querySelectorAll('.selected').forEach(x=>x.classList.remove('selected'));button.classList.add('selected');if(e.pointerType==='touch')run()};button.ondblclick=run;button.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();run()}}}
