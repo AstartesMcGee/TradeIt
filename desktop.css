@@ -27,24 +27,27 @@ dialog{padding:0;border:3px solid #0758c7;border-top:0;border-radius:7px 7px 3px
 #desktop.wallpaper-ready::before{opacity:1}
 @media(prefers-reduced-motion:reduce){#desktop::before{transition:none}}
 
-/* Separate listing filenames from status labels */
+/* Listing filenames */
 .listing-file .file-name {
   display: block;
+  width: 100%;
   max-width: 100%;
-  overflow-wrap: anywhere;
   text-align: center;
+  overflow-wrap: anywhere;
 }
 
-/* Status badge on its own line */
+/* Listing status badges */
 .listing-file .listing-status {
   display: block;
+  position: static;
   width: fit-content;
   max-width: 100%;
-  margin: 7px auto 0;
+  margin: 6px auto;
   padding: 3px 9px;
   border-radius: 3px;
   font: bold 10px Tahoma, sans-serif;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* Status colors */
@@ -66,17 +69,9 @@ dialog{padding:0;border:3px solid #0758c7;border-top:0;border-radius:7px 7px 3px
   border: 1px solid #b6bfcc;
 }
 
-
-.listing-file .file-name {
-  display: block;
-  width: 100%;
-  text-align: center;
-}
-
-.listing-file .listing-status {
-  display: block;
-  position: static;
-  clear: both;
-  margin: 6px auto;
-  flex-shrink: 0;
+/* Status alignment in list view */
+.list-view .listing-file .listing-status {
+  grid-column: 2;
+  margin: 0;
+  justify-self: start;
 }
