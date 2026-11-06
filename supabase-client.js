@@ -10,3 +10,18 @@ export const supabase = createClient(
 );
 
 console.log("Supabase client initialized!");
+
+// Temporary test function
+window.testSignup = async function (email, password) {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password
+  });
+
+  if (error) {
+    console.error("Signup failed:", error.message);
+    return;
+  }
+
+  console.log("Signup request completed:", data);
+};
