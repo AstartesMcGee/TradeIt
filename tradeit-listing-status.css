@@ -1,0 +1,4 @@
+/* Optional status labels for My Uploads */
+.listing-state{display:block;margin:6px auto 0;padding:3px 7px;width:max-content;border:1px solid #9bb7ce;border-radius:3px;background:#eaf5ff;color:#285f91;font:10px Tahoma,sans-serif;text-transform:capitalize}
+.listing-state-reserved{background:#fff2d6;border-color:#d6b66e;color:#845b12}
+.listing-state-traded{background:#e4e4e4;border-color:#b6b6b6;color:#626262}
