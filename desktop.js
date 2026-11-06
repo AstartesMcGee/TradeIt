@@ -3,17 +3,17 @@ let items=[...seed],saved=read('barter-saved',[]);
 let tradeitDb=null,tradeitDbUserId=null;
 const currentUserId=async()=>{if(!tradeitDb)return null;const {data:sessionData}=await tradeitDb.auth.getSession();if(!sessionData.session)return null;const {data,error}=await tradeitDb.auth.getUser();if(error)throw error;return data.user?.id||null};
 const dbListingToItem=r=>({id:r.id,title:r.title,category:r.category,location:r.location||'',size:r.size||'',weight:r.weight||'',desc:r.short_description||'',long:r.description||'',want:r.trade_want||'',condition:r.item_condition||'',date:r.available_from||r.created_at?.slice(0,10)||'2026-01-01',owner:r.owner_display||'TradeIt member',ownerId:r.user_id,status:r.status||'available',images:Array.isArray(r.images)&&r.images.length?r.images:[]});
-async function loadSharedListings(){
-  if(!tradeitDb)return;
-  const publicQuery=tradeitDb.from('listings').select('*').eq('status','available').order('created_at',{ascending:false});
-  const userId=tradeitDbUserId;
-  const ownQuery=userId?tradeitDb.from('listings').select('*').eq('user_id',userId).order('created_at',{ascending:false}):null;
-  const [publicResult,ownResult]=await Promise.all([publicQuery,ownQuery||Promise.resolve({data:[],error:null})]);
-  if(publicResult.error)throw publicResult.error;
-  if(ownResult.error)throw ownResult.error;
-  const merged=new Map();
-  for(const listing of [...(publicResult.data||[]),...(ownResult.data||[])])merged.set(listing.id,listing);
-  items=[...merged.values()].map(dbListingToItem).concat(seed);
+async function loadSharedListings() {
+  if (!tradeitDb) return;
+
+  const { data, error } = await tradeitDb
+    .from('listings')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+
+  items = [...(data || []).map(dbListingToItem), ...seed];
   refreshFolders();
 }
 async function initializeListings(){try{const module=await import('./supabase-client.js');tradeitDb=module.supabase;tradeitDbUserId=await currentUserId();tradeitDb.auth.onAuthStateChange((_event,session)=>{tradeitDbUserId=session?.user?.id||null;loadSharedListings().catch(console.error);if(wins.has('trade-inbox'))setTimeout(()=>refreshTradeInbox(),0)});await loadSharedListings()}catch(error){console.error('Could not load shared listings:',error);toast('Online listings could not load. Showing sample items.')}}
