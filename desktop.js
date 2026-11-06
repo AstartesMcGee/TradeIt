@@ -2,7 +2,7 @@ const read=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch{retur
 let items=[...seed],saved=read('barter-saved',[]);
 let tradeitDb=null,tradeitDbUserId=null;
 const currentUserId=async()=>{if(!tradeitDb)return null;const {data:sessionData}=await tradeitDb.auth.getSession();if(!sessionData.session)return null;const {data,error}=await tradeitDb.auth.getUser();if(error)throw error;return data.user?.id||null};
-const dbListingToItem=r=>({id:r.id,title:r.title,category:r.category,location:r.location||'',size:r.size||'',weight:r.weight||'',desc:r.short_description||'',long:r.description||'',want:r.trade_want||'',condition:r.item_condition||'',date:r.available_from||r.created_at?.slice(0,10)||'2026-01-01',owner:r.owner_display||'TradeIt member',ownerId:r.user_id,status:r.status||'available',images:Array.isArray(r.images)&&r.images.length?r.images:[]});
+const dbListingToItem=r=>({id:r.id,title:r.title,status: r.status || 'available',category:r.category,location:r.location||'',size:r.size||'',weight:r.weight||'',desc:r.short_description||'',long:r.description||'',want:r.trade_want||'',condition:r.item_condition||'',date:r.available_from||r.created_at?.slice(0,10)||'2026-01-01',owner:r.owner_display||'TradeIt member',ownerId:r.user_id,status:r.status||'available',images:Array.isArray(r.images)&&r.images.length?r.images:[]});
 async function loadSharedListings() {
   if (!tradeitDb) return;
 
