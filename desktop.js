@@ -16,7 +16,7 @@ async function loadSharedListings() {
   items = [...(data || []).map(dbListingToItem), ...seed];
   refreshFolders();
 }
-async function initializeListings(){try{const module=await import('./supabase-client.js');tradeitDb=module.supabase;tradeitDbUserId=await currentUserId();tradeitDb.auth.onAuthStateChange((_event,session)=>{tradeitDbUserId=session?.user?.id||null;loadSharedListings().catch(console.error);if(wins.has('trade-inbox'))setTimeout(()=>refreshTradeInbox(),0)});await loadSharedListings()}catch(error){console.error('Could not load shared listings:',error);toast('Online listings could not load. Showing sample items.')}}
+async function initializeListings(){try{console.log('TradeIt: initializeListings called');const module=await import('./supabase-client.js');tradeitDb=module.supabase;tradeitDbUserId=await currentUserId();tradeitDb.auth.onAuthStateChange((_event,session)=>{tradeitDbUserId=session?.user?.id||null;loadSharedListings().catch(console.error);if(wins.has('trade-inbox'))setTimeout(()=>refreshTradeInbox(),0)});await loadSharedListings()}catch(error){console.error('Could not load shared listings:',error);toast('Online listings could not load. Showing sample items.')}}
 
 const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let toastTimer;const toast=s=>{clearTimeout(toastTimer);$('#toast').textContent=s;$('#toast').classList.add('show');toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),4200)};
