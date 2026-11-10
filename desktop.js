@@ -203,7 +203,207 @@ function refreshFolders() {
 
 function updateDownloadsCount(){const count=$('[data-folder="Downloads"] .desktop-count');if(count)count.textContent=saved.length?String(saved.length):''}
 function saveItem(id,force=false){const exists=saved.includes(id);if(force&&exists){toast('Already saved in Downloads.');return}const next=exists&&!force?saved.filter(x=>x!==id):[...saved,id];try{localStorage.setItem('barter-saved',JSON.stringify(next));saved=next;refreshFolders();document.querySelectorAll(`[data-save="${id}"]`).forEach(b=>{b.textContent=saved.includes(id)?'✓ Saved in Downloads':'↓ Save to Downloads';b.setAttribute('aria-pressed',String(saved.includes(id)))});toast(saved.includes(id)?'Saved to Downloads. Open the folder on your desktop.':'Removed from Downloads.')}catch{toast('Could not save. Browser storage may be full.')}}
-function openItem(id){const i=items.find(x=>x.id===id);if(!i){toast('This listing could not be found.');return}const w=createWindow('item-'+id,i.title+' — Listing','item');if(w.ready)return;w.ready=true;w.el.classList.add('listing-window');w.el.querySelector('.window-content').innerHTML=`<div class="item-toolbar"><span>▧ ${esc(i.title)}.trade</span><button class="xp-button" data-folder-open>${icon(i.category,'tiny')}Open category</button></div><div class="item-scroll"><div class="item-layout"><div class="item-gallery"><img class="item-photo" src="${esc(i.images[0]||'')}" alt="${esc(i.title)} — photo 1"><div class="photo-thumbs">${i.images.map((p,n)=>`<button class="${n===0?'chosen':''}" data-photo="${n}" aria-label="View photo ${n+1} of ${esc(i.title)}"><img src="${esc(p)}" alt="Photo ${n+1}"></button>`).join('')}</div><span class="photo-label">1 of ${i.images.length} photos</span><div class="listing-owner">Listed by ${esc(i.owner)}<small>${seed.some(x=>x.id===i.id)?'Sample listing':'Shared listing · TradeIt'}</small></div></div><div class="item-info"><span class="item-category">${esc(i.category)} / Open to trades</span><h1>${esc(i.title)}</h1><span class="condition">${esc(i.condition)}</span><dl class="item-specs"><div><dt>Location</dt><dd>${esc(i.location)}</dd></div><div><dt>Size</dt><dd>${esc(i.size)}</dd></div><div><dt>Weight</dt><dd>${esc(i.weight)}</dd></div><div><dt>Available from</dt><dd>${new Date(i.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</dd></div></dl><h2>About this item</h2><p>${esc(i.long)}</p><div class="trade-wanted"><h2>Looking to trade for</h2><p>${esc(i.want)}</p></div><div class="item-actions"><button class="xp-button blue" data-offer>⇄ Propose a trade</button><button class="xp-button" data-save="${esc(id)}" aria-pressed="${saved.includes(id)}">${saved.includes(id)?'✓ Saved in Downloads':'↓ Save to Downloads'}</button></div></div></div></div><div class="window-status"><span>tradeit listing</span><span>${i.images.length} photos · ${esc(i.weight)}</span></div>`;const q=s=>w.el.querySelector(s);q('[data-folder-open]').onclick=()=>openFolder(i.category);q('[data-offer]').onclick=()=>offer(i);q('[data-save]').onclick=()=>saveItem(id);w.el.querySelectorAll('[data-photo]').forEach(b=>b.onclick=()=>{const n=Number(b.dataset.photo);q('.item-photo').src=i.images[n];q('.item-photo').alt=`${i.title} — photo ${n+1}`;q('.photo-label').textContent=`${n+1} of ${i.images.length} photos`;w.el.querySelectorAll('[data-photo]').forEach(t=>t.classList.toggle('chosen',t===b))})}
+function openItem(id) {
+  const i = items.find(x => x.id === id);
+
+  if (!i) {
+    toast('This listing could not be found.');
+    return;
+  }
+
+  const w = createWindow('item-' + id, i.title + ' — Listing', 'item');
+
+  if (w.ready) return;
+
+  w.ready = true;
+  w.el.classList.add('listing-window');
+
+  const isOwner = i.ownerId && i.ownerId === tradeitDbUserId;
+  const isAvailable = (i.status || 'available') === 'available';
+
+  let actionButton = '';
+
+  if (isOwner && isAvailable) {
+    actionButton = `
+      <button class="xp-button blue" data-edit-listing>
+        ✎ Edit Listing
+      </button>
+    `;
+  } else if (!isOwner && isAvailable) {
+    actionButton = `
+      <button class="xp-button blue" data-offer>
+        ⇄ Propose a trade
+      </button>
+    `;
+  }
+
+  w.el.querySelector('.window-content').innerHTML = `
+    <div class="item-toolbar">
+      <span>▧ ${esc(i.title)}.trade</span>
+
+      <button class="xp-button" data-folder-open>
+        ${icon(i.category, 'tiny')}
+        Open category
+      </button>
+    </div>
+
+    <div class="item-scroll">
+      <div class="item-layout">
+
+        <div class="item-gallery">
+          <img
+            class="item-photo"
+            src="${esc(i.images[0] || '')}"
+            alt="${esc(i.title)} — photo 1"
+          >
+
+          <div class="photo-thumbs">
+            ${i.images.map((p, n) => `
+              <button
+                class="${n === 0 ? 'chosen' : ''}"
+                data-photo="${n}"
+                aria-label="View photo ${n + 1} of ${esc(i.title)}"
+              >
+                <img src="${esc(p)}" alt="Photo ${n + 1}">
+              </button>
+            `).join('')}
+          </div>
+
+          <span class="photo-label">
+            1 of ${i.images.length} photos
+          </span>
+
+          <div class="listing-owner">
+            Listed by ${esc(i.owner)}
+            <small>
+              ${
+                seed.some(x => x.id === i.id)
+                  ? 'Sample listing'
+                  : 'Shared listing · TradeIt'
+              }
+            </small>
+          </div>
+        </div>
+
+        <div class="item-info">
+          <span class="item-category">
+            ${esc(i.category)} / Open to trades
+          </span>
+
+          <h1>${esc(i.title)}</h1>
+
+          <span class="condition">
+            ${esc(i.condition)}
+          </span>
+
+          <dl class="item-specs">
+            <div>
+              <dt>Location</dt>
+              <dd>${esc(i.location)}</dd>
+            </div>
+
+            <div>
+              <dt>Size</dt>
+              <dd>${esc(i.size)}</dd>
+            </div>
+
+            <div>
+              <dt>Weight</dt>
+              <dd>${esc(i.weight)}</dd>
+            </div>
+
+            <div>
+              <dt>Available from</dt>
+              <dd>
+                ${new Date(i.date + 'T12:00:00').toLocaleDateString(
+                  'en-US',
+                  {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric'
+                  }
+                )}
+              </dd>
+            </div>
+          </dl>
+
+          <h2>About this item</h2>
+          <p>${esc(i.long)}</p>
+
+          <div class="trade-wanted">
+            <h2>Looking to trade for</h2>
+            <p>${esc(i.want)}</p>
+          </div>
+
+          <div class="item-actions">
+            ${actionButton}
+
+            <button
+              class="xp-button"
+              data-save="${esc(id)}"
+              aria-pressed="${saved.includes(id)}"
+            >
+              ${
+                saved.includes(id)
+                  ? '✓ Saved in Downloads'
+                  : '↓ Save to Downloads'
+              }
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="window-status">
+      <span>tradeit listing</span>
+      <span>
+        ${i.images.length} photos · ${esc(i.weight)}
+      </span>
+    </div>
+  `;
+
+  const q = s => w.el.querySelector(s);
+
+  // Open the listing's category.
+  q('[data-folder-open]').onclick = () => openFolder(i.category);
+
+  // Propose a trade.
+  const offerButton = q('[data-offer]');
+
+  if (offerButton) {
+    offerButton.onclick = () => offer(i);
+  }
+
+  // Edit your own available listing.
+  const editButton = q('[data-edit-listing]');
+
+  if (editButton) {
+    editButton.onclick = () => editListing(i.id);
+  }
+
+  // Save the listing to Downloads.
+  q('[data-save]').onclick = () => saveItem(id);
+
+  // Switch between listing photos.
+  w.el.querySelectorAll('[data-photo]').forEach(b => {
+    b.onclick = () => {
+      const n = Number(b.dataset.photo);
+
+      q('.item-photo').src = i.images[n];
+      q('.item-photo').alt = `${i.title} — photo ${n + 1}`;
+
+      q('.photo-label').textContent =
+        `${n + 1} of ${i.images.length} photos`;
+
+      w.el.querySelectorAll('[data-photo]').forEach(t => {
+        t.classList.toggle('chosen', t === b);
+      });
+    };
+  });
+}
+
+
 function showDesktop(){wins.forEach(w=>{w.minimized=true;w.el.hidden=true});activeKey=null;renderTasks();$('#startMenu').hidden=true;$('#startButton').setAttribute('aria-expanded','false')}
 function help(){$('#modal').dataset.title='Help — tradeit';modal('<h2>Welcome to your trading desktop.</h2><p><strong>Folders are categories.</strong> Double-click a folder, then double-click a listing file to open it. On a phone, tap once. You can also select an icon and press Enter.</p><p><strong>Downloads holds your saves.</strong> Choose “Save to Downloads” inside any listing.</p><p><strong>Upload is for your own items.</strong> Add photos, details, and the date your item is available.</p><p>Drag windows by their blue title bars. Minimize them to the taskbar, maximize them, or close them.</p><p class="demo">Sample listings are demonstrations and cannot be traded. Real listings and photos are shared online. Trade offers and messages are saved in Supabase; Downloads are saved in this browser.</p>')}
 function boot(){document.title='tradeit — Desktop';$('#desktopIcons').innerHTML=folders.map(t=>`<button class="desktop-shortcut" data-folder="${t}" aria-label="Open ${t}">${icon(t)}<span class="desktop-label">${esc(t)}</span>${t==='Downloads'?'<span class="desktop-count"></span>':''}</button>`).join('');document.querySelectorAll('[data-folder]').forEach(b=>activateIcon(b,()=>openFolder(b.dataset.folder)));updateDownloadsCount();$('#modal .close').onclick=()=>$('#modal').close();new MutationObserver(()=>{$('#dialogTitle').textContent=$('#modal').dataset.title}).observe($('#modal'),{attributes:true,attributeFilter:['data-title']});$('#showDesktop').onclick=showDesktop;$('#startButton').onclick=()=>{const menu=$('#startMenu');menu.hidden=!menu.hidden;$('#startButton').setAttribute('aria-expanded',String(!menu.hidden))};$('#startMenu').innerHTML=`<div class="start-caption">${icon('Upload','tiny')}tradeit</div><div class="start-links">${['Trade Inbox','All items','Search','Downloads','Upload','Uploads'].map(t=>`<button data-start="${t}">${icon(t,'small')}<span>${t}<small>${{'Trade Inbox':'Offers and messages',Search:'Find a listing',Downloads:'Your saved items',Upload:'List something to trade',Uploads:'Your own listings','All items':'Browse everything'}[t]}</small></span></button>`).join('')}<button data-help><span class="help-icon">?</span><span>Help<small>How this desktop works</small></span></button></div><div class="start-bottom">Your neighborhood, in a folder.</div>`;$('#startMenu').querySelectorAll('[data-start]').forEach(b=>b.onclick=()=>{openFolder(b.dataset.start);$('#startMenu').hidden=true;$('#startButton').setAttribute('aria-expanded','false')});$('[data-help]').onclick=()=>{help();$('#startMenu').hidden=true;$('#startButton').setAttribute('aria-expanded','false')};document.addEventListener('pointerdown',e=>{if(!e.target.closest('#startMenu')&&!e.target.closest('#startButton')){$('#startMenu').hidden=true;$('#startButton').setAttribute('aria-expanded','false')}});document.addEventListener('keydown',e=>{if(e.key==='Escape'){$('#startMenu').hidden=true;$('#startButton').setAttribute('aria-expanded','false')}});$('#clockButton').onclick=openClockSettings;renderClock();setInterval(renderClock,1000);openFolder('All items');const id=new URLSearchParams(location.search).get('item');if(id)openItem(id);initializeListings()}
