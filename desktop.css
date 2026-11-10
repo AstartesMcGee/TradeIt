@@ -75,3 +75,47 @@ dialog{padding:0;border:3px solid #0758c7;border-top:0;border-radius:7px 7px 3px
   margin: 0;
   justify-self: start;
 }
+
+
+/* Windows XP desktop context menu */
+
+#desktop-context-menu {
+  position: fixed;
+  z-index: 3000;
+  width: 190px;
+  padding: 3px;
+  background: #ffffff;
+  border: 1px solid #7897c5;
+  border-radius: 2px;
+  box-shadow: 2px 3px 7px rgba(0, 0, 0, 0.3);
+  font-family: Tahoma, sans-serif;
+  font-size: 12px;
+}
+
+#desktop-context-menu[hidden] {
+  display: none;
+}
+
+#desktop-context-menu button {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  background: transparent;
+  color: #222;
+  text-align: left;
+  border-radius: 1px;
+}
+
+#desktop-context-menu button:hover,
+#desktop-context-menu button:focus-visible {
+  background: #316ac5;
+  color: white;
+}
+
+#desktop-context-menu .context-separator {
+  height: 1px;
+  margin: 4px 5px;
+  background: #d5d5d5;
+}
+
