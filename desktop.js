@@ -204,6 +204,7 @@ function refreshFolders() {
 function updateDownloadsCount(){const count=$('[data-folder="Downloads"] .desktop-count');if(count)count.textContent=saved.length?String(saved.length):''}
 function saveItem(id,force=false){const exists=saved.includes(id);if(force&&exists){toast('Already saved in Downloads.');return}const next=exists&&!force?saved.filter(x=>x!==id):[...saved,id];try{localStorage.setItem('barter-saved',JSON.stringify(next));saved=next;refreshFolders();document.querySelectorAll(`[data-save="${id}"]`).forEach(b=>{b.textContent=saved.includes(id)?'✓ Saved in Downloads':'↓ Save to Downloads';b.setAttribute('aria-pressed',String(saved.includes(id)))});toast(saved.includes(id)?'Saved to Downloads. Open the folder on your desktop.':'Removed from Downloads.')}catch{toast('Could not save. Browser storage may be full.')}}
 
+
 function openItem(id) {
   const i = items.find(x => x.id === id);
 
@@ -229,8 +230,15 @@ function openItem(id) {
       <button class="xp-button blue" data-edit-listing>
         ✎ Edit Listing
       </button>
+
       <button class="xp-button" data-toggle-availability>
-        ${status === 'available' ? '⊘ Mark Unavailable' : '✓ Make Available'}
+        ${status === 'available'
+          ? '⊘ Mark Unavailable'
+          : '✓ Make Available'}
+      </button>
+
+      <button class="xp-button" data-delete-listing>
+        🗑 Delete Listing
       </button>
     `;
   } else if (!isOwner && status === 'available') {
@@ -252,6 +260,7 @@ function openItem(id) {
   w.el.querySelector('.window-content').innerHTML = `
     <div class="item-toolbar">
       <span>▧ ${esc(i.title)}.trade</span>
+
       <button class="xp-button" data-folder-open>
         ${icon(i.category, 'tiny')} Open category
       </button>
@@ -259,6 +268,7 @@ function openItem(id) {
 
     <div class="item-scroll">
       <div class="item-layout">
+
         <div class="item-gallery">
           <img
             class="item-photo"
@@ -284,9 +294,7 @@ function openItem(id) {
 
           <div class="listing-owner">
             Listed by ${esc(i.owner)}
-            <small>
-              ${'Shared listing · TradeIt'}
-            </small>
+            <small>Shared listing · TradeIt</small>
           </div>
         </div>
 
@@ -304,14 +312,17 @@ function openItem(id) {
               <dt>Location</dt>
               <dd>${esc(i.location)}</dd>
             </div>
+
             <div>
               <dt>Size</dt>
               <dd>${esc(i.size)}</dd>
             </div>
+
             <div>
               <dt>Weight</dt>
               <dd>${esc(i.weight)}</dd>
             </div>
+
             <div>
               <dt>Available from</dt>
               <dd>${esc(dateText)}</dd>
@@ -351,23 +362,30 @@ function openItem(id) {
 
   const q = selector => w.el.querySelector(selector);
 
+  // Open the listing's category.
   q('[data-folder-open]').onclick = () => openFolder(i.category);
 
+  // Propose a trade.
   const offerButton = q('[data-offer]');
+
   if (offerButton) {
     offerButton.onclick = () => offer(i);
   }
 
+  // Edit your own listing.
   const editButton = q('[data-edit-listing]');
+
   if (editButton) {
     editButton.onclick = () => editListing(i.id);
   }
 
+  // Mark unavailable / Make available.
   const availabilityButton = q('[data-toggle-availability]');
 
   if (availabilityButton) {
     availabilityButton.onclick = async () => {
       const makeAvailable = status === 'unavailable';
+
       const action = makeAvailable
         ? 'make this listing available again'
         : 'hide this listing from the marketplace';
@@ -377,10 +395,13 @@ function openItem(id) {
       availabilityButton.disabled = true;
 
       try {
-        const { error } = await tradeitDb.rpc('set_listing_availability', {
-          p_listing_id: id,
-          p_available: makeAvailable
-        });
+        const { error } = await tradeitDb.rpc(
+          'set_listing_availability',
+          {
+            p_listing_id: id,
+            p_available: makeAvailable
+          }
+        );
 
         if (error) throw error;
 
@@ -392,21 +413,123 @@ function openItem(id) {
         toast(makeAvailable
           ? 'Listing is available again!'
           : 'Listing is now unavailable.');
+
       } catch (error) {
+        console.error('Availability update failed:', error);
         toast(error.message || 'Could not update listing availability.');
         availabilityButton.disabled = false;
       }
     };
   }
 
+  // Permanently delete your own listing.
+  const deleteButton = q('[data-delete-listing]');
+
+  if (deleteButton) {
+    deleteButton.onclick = async () => {
+      const confirmed = confirm(
+        `Permanently delete "${i.title}"?\n\n` +
+        'This cannot be undone. Listings involved in trades cannot be deleted.'
+      );
+
+      if (!confirmed) return;
+
+      deleteButton.disabled = true;
+
+      try {
+        // Check whether this listing has any trade history.
+        const { data: tradeHistory, error: tradeError } = await tradeitDb
+          .from('trades')
+          .select('id')
+          .or(
+            `offered_listing_id.eq.${id},requested_listing_id.eq.${id}`
+          )
+          .limit(1);
+
+        if (tradeError) throw tradeError;
+
+        if (tradeHistory?.length) {
+          throw new Error(
+            'This listing has trade history and cannot be permanently deleted.'
+          );
+        }
+
+        // Delete the database record before touching photos.
+        const { data: deleted, error: deleteError } = await tradeitDb
+          .from('listings')
+          .delete()
+          .eq('id', id)
+          .eq('user_id', tradeitDbUserId)
+          .in('status', ['available', 'unavailable'])
+          .select('id');
+
+        if (deleteError) throw deleteError;
+
+        if (!deleted?.length) {
+          throw new Error(
+            'Listing could not be deleted. Refresh and try again.'
+          );
+        }
+
+        // Delete photos from Supabase Storage.
+        const folder = `${tradeitDbUserId}/${id}`;
+
+        const { data: files, error: listError } = await tradeitDb.storage
+          .from('listing-images')
+          .list(folder, { limit: 1000 });
+
+        if (listError) {
+          console.warn('Photo cleanup failed:', listError);
+        } else if (files?.length) {
+          const paths = files
+            .filter(file => file.name && file.id)
+            .map(file => `${folder}/${file.name}`);
+
+          if (paths.length) {
+            const { error: storageError } = await tradeitDb.storage
+              .from('listing-images')
+              .remove(paths);
+
+            if (storageError) {
+              console.warn('Photo cleanup failed:', storageError);
+            }
+          }
+        }
+
+        // Remove the listing from Downloads.
+        saved = saved.filter(savedId => savedId !== id);
+
+        try {
+          localStorage.setItem('barter-saved', JSON.stringify(saved));
+        } catch (storageError) {
+          console.warn('Could not update local Downloads:', storageError);
+        }
+
+        // Close the listing and refresh the folders.
+        closeWindow('item-' + id);
+        await loadSharedListings();
+
+        toast('Listing permanently deleted.');
+
+      } catch (error) {
+        console.error('Delete listing failed:', error);
+        toast(error.message || 'Could not delete listing.');
+        deleteButton.disabled = false;
+      }
+    };
+  }
+
+  // Save the listing to Downloads.
   q('[data-save]').onclick = () => saveItem(id);
 
+  // Switch between listing photos.
   w.el.querySelectorAll('[data-photo]').forEach(button => {
     button.onclick = () => {
       const n = Number(button.dataset.photo);
 
       q('.item-photo').src = i.images[n];
       q('.item-photo').alt = `${i.title} — photo ${n + 1}`;
+
       q('.photo-label').textContent =
         `${n + 1} of ${i.images.length} photos`;
 
@@ -416,7 +539,6 @@ function openItem(id) {
     };
   });
 }
-
 
 function showDesktop(){wins.forEach(w=>{w.minimized=true;w.el.hidden=true});activeKey=null;renderTasks();$('#startMenu').hidden=true;$('#startButton').setAttribute('aria-expanded','false')}
 function help(){$('#modal').dataset.title='Help — tradeit';modal('<h2>Welcome to your trading desktop.</h2><p><strong>Folders are categories.</strong> Double-click a folder, then double-click a listing file to open it. On a phone, tap once. You can also select an icon and press Enter.</p><p><strong>Downloads holds your saves.</strong> Choose “Save to Downloads” inside any listing.</p><p><strong>Upload is for your own items.</strong> Add photos, details, and the date your item is available.</p><p>Drag windows by their blue title bars. Minimize them to the taskbar, maximize them, or close them.</p><p class="demo">Sample listings are demonstrations and cannot be traded. Real listings and photos are shared online. Trade offers and messages are saved in Supabase; Downloads are saved in this browser.</p>')}
