@@ -203,6 +203,7 @@ function refreshFolders() {
 
 function updateDownloadsCount(){const count=$('[data-folder="Downloads"] .desktop-count');if(count)count.textContent=saved.length?String(saved.length):''}
 function saveItem(id,force=false){const exists=saved.includes(id);if(force&&exists){toast('Already saved in Downloads.');return}const next=exists&&!force?saved.filter(x=>x!==id):[...saved,id];try{localStorage.setItem('barter-saved',JSON.stringify(next));saved=next;refreshFolders();document.querySelectorAll(`[data-save="${id}"]`).forEach(b=>{b.textContent=saved.includes(id)?'✓ Saved in Downloads':'↓ Save to Downloads';b.setAttribute('aria-pressed',String(saved.includes(id)))});toast(saved.includes(id)?'Saved to Downloads. Open the folder on your desktop.':'Removed from Downloads.')}catch{toast('Could not save. Browser storage may be full.')}}
+
 function openItem(id) {
   const i = items.find(x => x.id === id);
 
@@ -212,44 +213,52 @@ function openItem(id) {
   }
 
   const w = createWindow('item-' + id, i.title + ' — Listing', 'item');
-
   if (w.ready) return;
 
   w.ready = true;
   w.el.classList.add('listing-window');
 
-  const isOwner = i.ownerId && i.ownerId === tradeitDbUserId;
-  const isAvailable = (i.status || 'available') === 'available';
+  const isOwner = Boolean(i.ownerId && i.ownerId === tradeitDbUserId);
+  const status = i.status || 'available';
+  const canManage = isOwner && ['available', 'unavailable'].includes(status);
 
-  let actionButton = '';
+  let actionButtons = '';
 
-  if (isOwner && isAvailable) {
-    actionButton = `
+  if (canManage) {
+    actionButtons = `
       <button class="xp-button blue" data-edit-listing>
         ✎ Edit Listing
       </button>
+      <button class="xp-button" data-toggle-availability>
+        ${status === 'available' ? '⊘ Mark Unavailable' : '✓ Make Available'}
+      </button>
     `;
-  } else if (!isOwner && isAvailable) {
-    actionButton = `
+  } else if (!isOwner && status === 'available') {
+    actionButtons = `
       <button class="xp-button blue" data-offer>
         ⇄ Propose a trade
       </button>
     `;
   }
 
+  const dateText = i.date
+    ? new Date(i.date + 'T12:00:00').toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      })
+    : 'Not specified';
+
   w.el.querySelector('.window-content').innerHTML = `
     <div class="item-toolbar">
       <span>▧ ${esc(i.title)}.trade</span>
-
       <button class="xp-button" data-folder-open>
-        ${icon(i.category, 'tiny')}
-        Open category
+        ${icon(i.category, 'tiny')} Open category
       </button>
     </div>
 
     <div class="item-scroll">
       <div class="item-layout">
-
         <div class="item-gallery">
           <img
             class="item-photo"
@@ -270,60 +279,42 @@ function openItem(id) {
           </div>
 
           <span class="photo-label">
-            1 of ${i.images.length} photos
+            ${i.images.length ? '1' : '0'} of ${i.images.length} photos
           </span>
 
           <div class="listing-owner">
             Listed by ${esc(i.owner)}
             <small>
-              ${
-                seed.some(x => x.id === i.id)
-                  ? 'Sample listing'
-                  : 'Shared listing · TradeIt'
-              }
+              ${'Shared listing · TradeIt'}
             </small>
           </div>
         </div>
 
         <div class="item-info">
           <span class="item-category">
-            ${esc(i.category)} / Open to trades
+            ${esc(i.category)} / ${esc(status)}
           </span>
 
           <h1>${esc(i.title)}</h1>
 
-          <span class="condition">
-            ${esc(i.condition)}
-          </span>
+          <span class="condition">${esc(i.condition)}</span>
 
           <dl class="item-specs">
             <div>
               <dt>Location</dt>
               <dd>${esc(i.location)}</dd>
             </div>
-
             <div>
               <dt>Size</dt>
               <dd>${esc(i.size)}</dd>
             </div>
-
             <div>
               <dt>Weight</dt>
               <dd>${esc(i.weight)}</dd>
             </div>
-
             <div>
               <dt>Available from</dt>
-              <dd>
-                ${new Date(i.date + 'T12:00:00').toLocaleDateString(
-                  'en-US',
-                  {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric'
-                  }
-                )}
-              </dd>
+              <dd>${esc(dateText)}</dd>
             </div>
           </dl>
 
@@ -336,68 +327,91 @@ function openItem(id) {
           </div>
 
           <div class="item-actions">
-            ${actionButton}
+            ${actionButtons}
 
             <button
               class="xp-button"
               data-save="${esc(id)}"
               aria-pressed="${saved.includes(id)}"
             >
-              ${
-                saved.includes(id)
-                  ? '✓ Saved in Downloads'
-                  : '↓ Save to Downloads'
-              }
+              ${saved.includes(id)
+                ? '✓ Saved in Downloads'
+                : '↓ Save to Downloads'}
             </button>
           </div>
-
         </div>
       </div>
     </div>
 
     <div class="window-status">
-      <span>tradeit listing</span>
-      <span>
-        ${i.images.length} photos · ${esc(i.weight)}
-      </span>
+      <span>tradeit listing · ${esc(status)}</span>
+      <span>${i.images.length} photos · ${esc(i.weight)}</span>
     </div>
   `;
 
-  const q = s => w.el.querySelector(s);
+  const q = selector => w.el.querySelector(selector);
 
-  // Open the listing's category.
   q('[data-folder-open]').onclick = () => openFolder(i.category);
 
-  // Propose a trade.
   const offerButton = q('[data-offer]');
-
   if (offerButton) {
     offerButton.onclick = () => offer(i);
   }
 
-  // Edit your own available listing.
   const editButton = q('[data-edit-listing]');
-
   if (editButton) {
     editButton.onclick = () => editListing(i.id);
   }
 
-  // Save the listing to Downloads.
+  const availabilityButton = q('[data-toggle-availability]');
+
+  if (availabilityButton) {
+    availabilityButton.onclick = async () => {
+      const makeAvailable = status === 'unavailable';
+      const action = makeAvailable
+        ? 'make this listing available again'
+        : 'hide this listing from the marketplace';
+
+      if (!confirm(`Are you sure you want to ${action}?`)) return;
+
+      availabilityButton.disabled = true;
+
+      try {
+        const { error } = await tradeitDb.rpc('set_listing_availability', {
+          p_listing_id: id,
+          p_available: makeAvailable
+        });
+
+        if (error) throw error;
+
+        await loadSharedListings();
+
+        closeWindow('item-' + id);
+        openItem(id);
+
+        toast(makeAvailable
+          ? 'Listing is available again!'
+          : 'Listing is now unavailable.');
+      } catch (error) {
+        toast(error.message || 'Could not update listing availability.');
+        availabilityButton.disabled = false;
+      }
+    };
+  }
+
   q('[data-save]').onclick = () => saveItem(id);
 
-  // Switch between listing photos.
-  w.el.querySelectorAll('[data-photo]').forEach(b => {
-    b.onclick = () => {
-      const n = Number(b.dataset.photo);
+  w.el.querySelectorAll('[data-photo]').forEach(button => {
+    button.onclick = () => {
+      const n = Number(button.dataset.photo);
 
       q('.item-photo').src = i.images[n];
       q('.item-photo').alt = `${i.title} — photo ${n + 1}`;
-
       q('.photo-label').textContent =
         `${n + 1} of ${i.images.length} photos`;
 
-      w.el.querySelectorAll('[data-photo]').forEach(t => {
-        t.classList.toggle('chosen', t === b);
+      w.el.querySelectorAll('[data-photo]').forEach(other => {
+        other.classList.toggle('chosen', other === button);
       });
     };
   });
