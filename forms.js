@@ -19,8 +19,8 @@ async function editListing(itemId) {
 
     if (error) throw error;
 
-    if (item.status !== 'available') {
-      throw new Error('Only available listings can be edited.');
+    if (!['available', 'unavailable'].includes(item.status)) {
+      throw new Error('Reserved or traded listings cannot be edited.');
     }
 
     // Each entry is either an existing URL or a newly selected File.
@@ -367,8 +367,8 @@ async function editListing(itemId) {
 
         if (latestError) throw latestError;
 
-        if (latest.status !== 'available') {
-          throw new Error('This listing is no longer available for editing.');
+        if (!['available', 'unavailable'].includes(latest.status)) {
+          throw new Error('This listing can no longer be edited.');
         }
 
         const imageUrls = [];
@@ -423,7 +423,7 @@ async function editListing(itemId) {
           })
           .eq('id', itemId)
           .eq('user_id', uid)
-          .eq('status', 'available')
+          .eq('status', latest.status)
           .select('id');
 
         if (updateError) throw updateError;
