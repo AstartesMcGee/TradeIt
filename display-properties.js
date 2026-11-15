@@ -69,6 +69,9 @@
     ? decodeURIComponent(currentMatch[1])
     : DEFAULT_WALLPAPER;
 
+    let selectedCustomFile = null;
+    let selectedCustomPreviewUrl = null;
+
     
     function wallpaperUrl(filename) {
       return 'wallpapers/' + encodeURIComponent(filename);
@@ -80,12 +83,22 @@
     }
 
     async function applyWallpaper() {
+      if (selectedCustomFile) {
+        if (typeof window.uploadCustomWallpaper !== 'function') {
+          throw new Error('Custom wallpaper uploads are not ready.');
+        }
+
+        await window.uploadCustomWallpaper(selectedCustomFile);
+        selectedCustomFile = null;
+        return;
+      }
+
       if (typeof window.saveWallpaperPreference !== 'function') {
         throw new Error('Wallpaper preferences are still loading.');
       }
 
       await window.saveWallpaperPreference(selectedWallpaper);
-    }
+      }
 
     function close() {
       overlay.remove();
@@ -124,6 +137,13 @@
 
     select.onchange = () => {
       selectedWallpaper = select.value;
+      selectedCustomFile = null;
+
+      if (selectedCustomPreviewUrl) {
+        URL.revokeObjectURL(selectedCustomPreviewUrl);
+        selectedCustomPreviewUrl = null;
+      }
+
       showPreview(selectedWallpaper);
     };
 
@@ -168,9 +188,42 @@
       select.innerHTML = '<option>Unable to load wallpapers</option>';
     }
 
-    // Custom uploads will be connected to Supabase next.
+    const fileInput = overlay.querySelector('[data-wallpaper-file]');
+
     overlay.querySelector('[data-browse]').onclick = () => {
-      alert('Custom wallpaper uploads are coming next!');
+      fileInput.click();
     };
+
+    fileInput.onchange = () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+
+      if (!allowedTypes.includes(file.type)) {
+        alert('Please choose a JPG, PNG, or WebP image.');
+        fileInput.value = '';
+        return;
+      }
+
+      if (file.size > 5 * 1024 * 1024) {
+        alert('Wallpaper images must be smaller than 5 MB.');
+        fileInput.value = '';
+        return;
+      }
+    
+      if (selectedCustomPreviewUrl) {
+        URL.revokeObjectURL(selectedCustomPreviewUrl);
+      }
+
+      selectedCustomFile = file;
+      selectedCustomPreviewUrl = URL.createObjectURL(file);
+
+      preview.style.backgroundImage =
+        `url("${selectedCustomPreviewUrl}")`;
+
+      fileInput.value = '';
+    };    
+
   };
 })();
