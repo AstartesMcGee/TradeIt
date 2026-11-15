@@ -1,4 +1,4 @@
-(function initializeWallpaper() {
+function initializeWallpaper() {
   const desktop = document.getElementById('desktop');
   if (!desktop) return;
 
