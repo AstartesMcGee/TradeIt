@@ -57,8 +57,19 @@
     const preview = overlay.querySelector('.wallpaper-preview-screen');
 
     // Temporary selection state. Supabase will be added next.
-    let selectedWallpaper = DEFAULT_WALLPAPER;
+  const currentWallpaper = getComputedStyle(desktop)
+    .getPropertyValue('--desktop-wallpaper')
+    .trim();
 
+  const currentMatch = currentWallpaper.match(
+    /wallpapers\/([^"')]+)/
+  );
+
+  let selectedWallpaper = currentMatch
+    ? decodeURIComponent(currentMatch[1])
+    : DEFAULT_WALLPAPER;
+
+    
     function wallpaperUrl(filename) {
       return 'wallpapers/' + encodeURIComponent(filename);
     }
@@ -141,9 +152,13 @@
         select.appendChild(option);
       }
 
-      if (files.includes(DEFAULT_WALLPAPER)) {
-        select.value = DEFAULT_WALLPAPER;
-      }
+    if (files.includes(selectedWallpaper)) {
+      select.value = selectedWallpaper;
+    } else {
+      select.value = DEFAULT_WALLPAPER;
+    }
+
+      
 
       selectedWallpaper = select.value;
       if (selectedWallpaper) showPreview(selectedWallpaper);
