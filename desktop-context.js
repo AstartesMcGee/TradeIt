@@ -60,8 +60,13 @@
     location.reload();
   };
 
-  menu.querySelector('[data-context-properties]').onclick = () => {
-    closeMenu();
-    toast('Display Properties is coming next!');
-  };
+menu.querySelector('[data-context-properties]').onclick = () => {
+  closeMenu();
+
+  if (typeof window.openDisplayProperties === 'function') {
+    window.openDisplayProperties();
+  } else {
+    console.warn('Display Properties window is not installed yet.');
+  }
+};
 })();
