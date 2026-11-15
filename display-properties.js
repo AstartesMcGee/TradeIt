@@ -3,8 +3,7 @@
   const DEFAULT_WALLPAPER = 'glass-city.jpg';
 
   window.openDisplayProperties = async function () {
-    const existing = document.getElementById('display-properties');
-    if (existing) existing.remove();
+    document.getElementById('display-properties')?.remove();
 
     const desktop = document.getElementById('desktop');
     if (!desktop) return;
@@ -13,11 +12,15 @@
     overlay.id = 'display-properties';
 
     overlay.innerHTML = `
-      <div class="display-properties-window" role="dialog"
-           aria-modal="true" aria-label="Display Properties">
+      <div class="display-properties-window"
+           role="dialog"
+           aria-modal="true"
+           aria-label="Display Properties">
+
         <div class="display-properties-titlebar">
           <span>Display Properties</span>
-          <button type="button" data-close aria-label="Close">×</button>
+          <button type="button" data-close
+                  aria-label="Close">×</button>
         </div>
 
         <div class="display-properties-content">
@@ -31,7 +34,7 @@
 
           <label for="wallpaper-select">Background:</label>
           <select id="wallpaper-select">
-            <option value="">Loading wallpapers...</option>
+            <option value="">Loading...</option>
           </select>
 
           <div class="wallpaper-browse">
@@ -40,6 +43,26 @@
                    accept="image/png,image/jpeg,image/webp"
                    data-wallpaper-file hidden>
           </div>
+
+          <div class="custom-gallery-heading">
+            <strong>My Wallpapers</strong>
+            <button type="button" data-refresh-gallery>
+              Refresh
+            </button>
+          </div>
+
+          <div class="custom-wallpaper-gallery"
+               data-gallery>
+            Loading your wallpapers...
+          </div>
+
+          <div class="gallery-actions">
+            <button type="button" data-delete disabled>
+              Delete Selected
+            </button>
+          </div>
+
+          <div class="wallpaper-status" data-status></div>
         </div>
 
         <div class="display-properties-actions">
@@ -52,9 +75,16 @@
 
     document.body.appendChild(overlay);
 
-    const select = overlay.querySelector('#wallpaper-select');
-    const preview = overlay.querySelector('.wallpaper-preview-screen');
-    const fileInput = overlay.querySelector('[data-wallpaper-file]');
+    const $ = selector => overlay.querySelector(selector);
+
+    const select = $('#wallpaper-select');
+    const preview = $('.wallpaper-preview-screen');
+    const gallery = $('[data-gallery]');
+    const status = $('[data-status]');
+    const fileInput = $('[data-wallpaper-file]');
+    const deleteButton = $('[data-delete]');
+    const applyButton = $('[data-apply]');
+    const okButton = $('[data-ok]');
 
     const currentWallpaper = getComputedStyle(desktop)
       .getPropertyValue('--desktop-wallpaper')
@@ -64,192 +94,315 @@
       /wallpapers\/([^"')]+)/
     );
 
-    const isCustomWallpaper =
+    const currentIsCustom =
       currentWallpaper.includes('/user-wallpapers/');
 
-    const customWallpaperImage = isCustomWallpaper
-      ? currentWallpaper
-      : null;
-
-    let selectedWallpaper = currentMatch
+    let selectedPreset = currentMatch
       ? decodeURIComponent(currentMatch[1])
       : DEFAULT_WALLPAPER;
 
-    let selectedCustomFile = null;
-    let selectedCustomPreviewUrl = null;
+    let selectedPath = null;
+    let selectedFile = null;
+    let previewUrl = null;
+    let wallpapers = [];
+    let busy = false;
 
-    function wallpaperUrl(filename) {
+    function setStatus(message) {
+      status.textContent = message;
+    }
+
+    function setPreview(url) {
+      preview.style.backgroundImage = `url("${url}")`;
+    }
+
+    function presetUrl(filename) {
       return 'wallpapers/' + encodeURIComponent(filename);
     }
 
-    function showPreview(filename) {
-      preview.style.backgroundImage =
-        `url("${wallpaperUrl(filename)}")`;
-    }
+    function clearFile() {
+      selectedFile = null;
 
-    function clearCustomFile() {
-      selectedCustomFile = null;
-
-      if (selectedCustomPreviewUrl) {
-        URL.revokeObjectURL(selectedCustomPreviewUrl);
-        selectedCustomPreviewUrl = null;
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        previewUrl = null;
       }
     }
 
     function close() {
-      clearCustomFile();
+      clearFile();
       overlay.remove();
     }
 
-    async function applyWallpaper() {
-      if (selectedCustomFile) {
+    function setBusy(value) {
+      busy = value;
+      applyButton.disabled = value;
+      okButton.disabled = value;
+      deleteButton.disabled =
+        value || !selectedPath;
+    }
+
+    function selectPreset(filename) {
+      clearFile();
+      selectedPath = null;
+      selectedPreset = filename;
+      select.value = filename;
+
+      setPreview(presetUrl(filename));
+      renderGallery();
+      setStatus('');
+    }
+
+    function selectCustom(wallpaper) {
+      clearFile();
+
+      selectedPath = wallpaper.path;
+      select.value = '__custom__';
+
+      setPreview(wallpaper.url);
+      renderGallery();
+      setStatus('Selected: ' + wallpaper.name);
+    }
+
+    function renderGallery() {
+      gallery.replaceChildren();
+
+      if (!wallpapers.length) {
+        gallery.textContent =
+          'No custom wallpapers yet. Click Browse to add one.';
+        deleteButton.disabled = true;
+        return;
+      }
+
+      for (const wallpaper of wallpapers) {
+        const tile = document.createElement('button');
+        tile.type = 'button';
+        tile.className = 'custom-wallpaper-tile';
+
+        if (wallpaper.path === selectedPath) {
+          tile.classList.add('selected');
+        }
+
+        const image = document.createElement('img');
+        image.src = wallpaper.url;
+        image.alt = wallpaper.name;
+        image.loading = 'lazy';
+
+        const name = document.createElement('span');
+        name.textContent = wallpaper.name.slice(0, 14);
+
+        tile.append(image, name);
+
+        tile.onclick = () => {
+          if (!busy) selectCustom(wallpaper);
+        };
+
+        gallery.appendChild(tile);
+      }
+
+      deleteButton.disabled = busy || !selectedPath;
+    }
+
+    async function loadGallery() {
+      if (typeof window.listCustomWallpapers !== 'function') {
+        gallery.textContent = 'Wallpaper service is loading.';
+        return;
+      }
+
+      try {
+        wallpapers = await window.listCustomWallpapers();
+
+        if (!overlay.isConnected) return;
+
+        renderGallery();
+      } catch (error) {
+        console.error('Gallery load failed:', error);
+
+        if (overlay.isConnected) {
+          gallery.textContent =
+            'Could not load wallpapers. Please sign in.';
+        }
+      }
+    }
+
+    async function applySelection() {
+      if (selectedFile) {
         if (typeof window.uploadCustomWallpaper !== 'function') {
-          throw new Error('Custom wallpaper uploads are not ready.');
+          throw new Error('Upload service is not ready.');
         }
 
-        await window.uploadCustomWallpaper(selectedCustomFile);
+        const uploaded =
+          await window.uploadCustomWallpaper(selectedFile);
 
-        // The uploaded image is now the active custom wallpaper.
-        clearCustomFile();
+        clearFile();
 
-        const activeWallpaper = getComputedStyle(desktop)
-          .getPropertyValue('--desktop-wallpaper')
-          .trim();
-
-        let customOption = select.querySelector(
-          'option[value="__custom__"]'
-        );
-
-        if (!customOption) {
-          customOption = document.createElement('option');
-          customOption.value = '__custom__';
-          customOption.textContent = 'Custom Wallpaper';
-          select.insertBefore(customOption, select.firstChild);
-        }
-
+        wallpapers = await window.listCustomWallpapers();
+        selectedPath = uploaded.path;
         select.value = '__custom__';
-        preview.style.backgroundImage = activeWallpaper;
+
+        setPreview(uploaded.url);
+        renderGallery();
+
         return;
       }
 
-      if (select.value === '__custom__') {
-        // Keep the already-saved custom wallpaper.
+      if (selectedPath) {
+        await window.saveExistingCustomWallpaper(selectedPath);
         return;
       }
 
-      if (typeof window.saveWallpaperPreference !== 'function') {
-        throw new Error('Wallpaper preferences are still loading.');
-      }
-
-      await window.saveWallpaperPreference(selectedWallpaper);
+      await window.saveWallpaperPreference(selectedPreset);
     }
 
     async function saveSelection(closeAfterSave) {
-      const applyButton = overlay.querySelector('[data-apply]');
-      const okButton = overlay.querySelector('[data-ok]');
+      if (busy) return;
 
-      applyButton.disabled = true;
-      okButton.disabled = true;
+      setBusy(true);
+      setStatus('Saving wallpaper...');
 
       try {
-        await applyWallpaper();
+        await applySelection();
 
-        if (closeAfterSave) close();
+        if (closeAfterSave) {
+          close();
+        } else {
+          setStatus('Wallpaper saved successfully.');
+        }
       } catch (error) {
         console.error('Wallpaper save failed:', error);
-        alert(error.message || 'Could not save wallpaper.');
+        setStatus(error.message || 'Could not save wallpaper.');
       } finally {
-        applyButton.disabled = false;
-        okButton.disabled = false;
+        if (overlay.isConnected) setBusy(false);
       }
     }
 
-    overlay.querySelector('[data-close]').onclick = close;
-    overlay.querySelector('[data-cancel]').onclick = close;
+    $('[data-close]').onclick = close;
+    $('[data-cancel]').onclick = close;
 
-    overlay.querySelector('[data-apply]').onclick = () => {
-      saveSelection(false);
-    };
-
-    overlay.querySelector('[data-ok]').onclick = () => {
-      saveSelection(true);
-    };
+    applyButton.onclick = () => saveSelection(false);
+    okButton.onclick = () => saveSelection(true);
 
     select.onchange = () => {
-      clearCustomFile();
+      if (busy) return;
 
       if (select.value === '__custom__') {
-        if (customWallpaperImage) {
-          preview.style.backgroundImage = customWallpaperImage;
-        }
-        return;
-      }
+        const chosen = wallpapers.find(
+          item => item.path === selectedPath
+        );
 
-      selectedWallpaper = select.value;
-      if (selectedWallpaper) showPreview(selectedWallpaper);
+        if (chosen) {
+          selectCustom(chosen);
+        } else if (wallpapers.length) {
+          selectCustom(wallpapers[0]);
+        } else {
+          select.value = selectedPreset;
+          setStatus('Upload a custom wallpaper first.');
+        }
+      } else {
+        selectPreset(select.value);
+      }
+    };
+
+    $('[data-browse]').onclick = () => {
+      if (!busy) fileInput.click();
     };
 
     fileInput.onchange = () => {
       const file = fileInput.files?.[0];
-      if (!file) return;
+      fileInput.value = '';
 
-      const allowedTypes = [
-        'image/jpeg',
-        'image/png',
-        'image/webp'
-      ];
+      if (!file || busy) return;
 
-      if (!allowedTypes.includes(file.type)) {
-        alert('Please choose a JPG, PNG, or WebP image.');
-        fileInput.value = '';
+      if (!['image/jpeg', 'image/png', 'image/webp']
+          .includes(file.type)) {
+        setStatus('Choose a JPG, PNG, or WebP image.');
         return;
       }
 
       if (file.size > 5 * 1024 * 1024) {
-        alert('Wallpaper images must be 5 MB or smaller.');
-        fileInput.value = '';
+        setStatus('Images must be 5 MB or smaller.');
         return;
       }
 
-      clearCustomFile();
+      clearFile();
 
-      selectedCustomFile = file;
-      selectedCustomPreviewUrl = URL.createObjectURL(file);
+      selectedFile = file;
+      selectedPath = null;
+      previewUrl = URL.createObjectURL(file);
 
-      preview.style.backgroundImage =
-        `url("${selectedCustomPreviewUrl}")`;
-
-      fileInput.value = '';
+      setPreview(previewUrl);
+      renderGallery();
+      setStatus('Ready to upload: ' + file.name);
     };
 
-    overlay.querySelector('[data-browse]').onclick = () => {
-      fileInput.click();
+    $('[data-refresh-gallery]').onclick = async () => {
+      if (busy) return;
+
+      setStatus('Refreshing gallery...');
+      await loadGallery();
+      setStatus('');
     };
 
+    deleteButton.onclick = async () => {
+      if (!selectedPath || busy) return;
+
+      const wallpaper = wallpapers.find(
+        item => item.path === selectedPath
+      );
+
+      if (!wallpaper) return;
+
+      const confirmed = confirm(
+        `Permanently delete ${wallpaper.name}?`
+      );
+
+      if (!confirmed) return;
+
+      setBusy(true);
+
+      try {
+        await window.deleteCustomWallpaper(selectedPath);
+
+        wallpapers = wallpapers.filter(
+          item => item.path !== selectedPath
+        );
+
+        selectedPath = null;
+        selectedPreset = DEFAULT_WALLPAPER;
+        select.value = DEFAULT_WALLPAPER;
+
+        setPreview(presetUrl(DEFAULT_WALLPAPER));
+        renderGallery();
+
+        setStatus('Wallpaper deleted.');
+      } catch (error) {
+        console.error('Wallpaper delete failed:', error);
+        setStatus(error.message || 'Could not delete wallpaper.');
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    // Load the preset wallpaper choices.
     try {
       const response = await fetch('wallpapers.json');
 
-      if (!response.ok) {
-        throw new Error('Cannot load wallpapers.json');
-      }
+      if (!response.ok) throw new Error('Wallpaper list unavailable.');
 
       const files = await response.json();
 
       if (!Array.isArray(files)) {
-        throw new Error('Invalid wallpaper list');
+        throw new Error('Invalid wallpaper list.');
       }
 
       if (!overlay.isConnected) return;
 
-      select.innerHTML = '';
+      select.replaceChildren();
 
       for (const filename of files) {
         if (
           typeof filename !== 'string' ||
           /[/\\]/.test(filename)
-        ) {
-          continue;
-        }
+        ) continue;
 
         const option = document.createElement('option');
         option.value = filename;
@@ -261,34 +414,40 @@
         select.appendChild(option);
       }
 
-      if (isCustomWallpaper) {
-        const option = document.createElement('option');
-        option.value = '__custom__';
-        option.textContent = 'Custom Wallpaper';
+      const customOption = document.createElement('option');
+      customOption.value = '__custom__';
+      customOption.textContent = 'Custom Wallpaper';
+      select.insertBefore(customOption, select.firstChild);
 
-        select.insertBefore(option, select.firstChild);
-        select.value = '__custom__';
+      select.value = currentIsCustom
+        ? '__custom__'
+        : selectedPreset;
 
-        preview.style.backgroundImage = currentWallpaper;
+      if (!currentIsCustom) {
+        setPreview(presetUrl(selectedPreset));
       } else {
-        if (files.includes(selectedWallpaper)) {
-          select.value = selectedWallpaper;
-        } else {
-          select.value = DEFAULT_WALLPAPER;
-        }
-
-        selectedWallpaper = select.value;
-
-        if (selectedWallpaper) {
-          showPreview(selectedWallpaper);
-        }
+        preview.style.backgroundImage = currentWallpaper;
       }
-    } catch (error) {
-      console.error('Wallpaper list failed:', error);
 
-      if (overlay.isConnected) {
-        select.innerHTML =
-          '<option value="">Unable to load wallpapers</option>';
+    } catch (error) {
+      console.error(error);
+      setStatus('Could not load preset wallpapers.');
+    }
+
+    await loadGallery();
+
+    if (!overlay.isConnected) return;
+
+    // Match the currently active custom wallpaper to its gallery tile.
+    if (currentIsCustom) {
+      const active = wallpapers.find(
+        wallpaper => currentWallpaper.includes(wallpaper.url)
+      );
+
+      if (active) {
+        selectedPath = active.path;
+        select.value = '__custom__';
+        renderGallery();
       }
     }
   };
