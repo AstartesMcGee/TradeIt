@@ -4,9 +4,7 @@
 
   window.openDisplayProperties = async function () {
     const existing = document.getElementById('display-properties');
-    if (existing) {
-      existing.remove();
-    }
+    if (existing) existing.remove();
 
     const desktop = document.getElementById('desktop');
     if (!desktop) return;
@@ -38,7 +36,8 @@
 
           <div class="wallpaper-browse">
             <button type="button" data-browse>Browse...</button>
-            <input type="file" accept="image/png,image/jpeg,image/webp"
+            <input type="file"
+                   accept="image/png,image/jpeg,image/webp"
                    data-wallpaper-file hidden>
           </div>
         </div>
@@ -55,24 +54,30 @@
 
     const select = overlay.querySelector('#wallpaper-select');
     const preview = overlay.querySelector('.wallpaper-preview-screen');
+    const fileInput = overlay.querySelector('[data-wallpaper-file]');
 
-    // Temporary selection state. Supabase will be added next.
-  const currentWallpaper = getComputedStyle(desktop)
-    .getPropertyValue('--desktop-wallpaper')
-    .trim();
+    const currentWallpaper = getComputedStyle(desktop)
+      .getPropertyValue('--desktop-wallpaper')
+      .trim();
 
-  const currentMatch = currentWallpaper.match(
-    /wallpapers\/([^"')]+)/
-  );
+    const currentMatch = currentWallpaper.match(
+      /wallpapers\/([^"')]+)/
+    );
 
-  let selectedWallpaper = currentMatch
-    ? decodeURIComponent(currentMatch[1])
-    : DEFAULT_WALLPAPER;
+    const isCustomWallpaper =
+      currentWallpaper.includes('/user-wallpapers/');
+
+    const customWallpaperImage = isCustomWallpaper
+      ? currentWallpaper
+      : null;
+
+    let selectedWallpaper = currentMatch
+      ? decodeURIComponent(currentMatch[1])
+      : DEFAULT_WALLPAPER;
 
     let selectedCustomFile = null;
     let selectedCustomPreviewUrl = null;
 
-    
     function wallpaperUrl(filename) {
       return 'wallpapers/' + encodeURIComponent(filename);
     }
@@ -82,6 +87,20 @@
         `url("${wallpaperUrl(filename)}")`;
     }
 
+    function clearCustomFile() {
+      selectedCustomFile = null;
+
+      if (selectedCustomPreviewUrl) {
+        URL.revokeObjectURL(selectedCustomPreviewUrl);
+        selectedCustomPreviewUrl = null;
+      }
+    }
+
+    function close() {
+      clearCustomFile();
+      overlay.remove();
+    }
+
     async function applyWallpaper() {
       if (selectedCustomFile) {
         if (typeof window.uploadCustomWallpaper !== 'function') {
@@ -89,7 +108,32 @@
         }
 
         await window.uploadCustomWallpaper(selectedCustomFile);
-        selectedCustomFile = null;
+
+        // The uploaded image is now the active custom wallpaper.
+        clearCustomFile();
+
+        const activeWallpaper = getComputedStyle(desktop)
+          .getPropertyValue('--desktop-wallpaper')
+          .trim();
+
+        let customOption = select.querySelector(
+          'option[value="__custom__"]'
+        );
+
+        if (!customOption) {
+          customOption = document.createElement('option');
+          customOption.value = '__custom__';
+          customOption.textContent = 'Custom Wallpaper';
+          select.insertBefore(customOption, select.firstChild);
+        }
+
+        select.value = '__custom__';
+        preview.style.backgroundImage = activeWallpaper;
+        return;
+      }
+
+      if (select.value === '__custom__') {
+        // Keep the already-saved custom wallpaper.
         return;
       }
 
@@ -98,14 +142,7 @@
       }
 
       await window.saveWallpaperPreference(selectedWallpaper);
-      }
-
-    function close() {
-      overlay.remove();
     }
-
-    overlay.querySelector('[data-close]').onclick = close;
-    overlay.querySelector('[data-cancel]').onclick = close;
 
     async function saveSelection(closeAfterSave) {
       const applyButton = overlay.querySelector('[data-apply]');
@@ -127,6 +164,9 @@
       }
     }
 
+    overlay.querySelector('[data-close]').onclick = close;
+    overlay.querySelector('[data-cancel]').onclick = close;
+
     overlay.querySelector('[data-apply]').onclick = () => {
       saveSelection(false);
     };
@@ -136,29 +176,78 @@
     };
 
     select.onchange = () => {
-      selectedWallpaper = select.value;
-      selectedCustomFile = null;
+      clearCustomFile();
 
-      if (selectedCustomPreviewUrl) {
-        URL.revokeObjectURL(selectedCustomPreviewUrl);
-        selectedCustomPreviewUrl = null;
+      if (select.value === '__custom__') {
+        if (customWallpaperImage) {
+          preview.style.backgroundImage = customWallpaperImage;
+        }
+        return;
       }
 
-      showPreview(selectedWallpaper);
+      selectedWallpaper = select.value;
+      if (selectedWallpaper) showPreview(selectedWallpaper);
     };
 
-    // Load the preset wallpapers from wallpapers.json.
+    fileInput.onchange = () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+
+      const allowedTypes = [
+        'image/jpeg',
+        'image/png',
+        'image/webp'
+      ];
+
+      if (!allowedTypes.includes(file.type)) {
+        alert('Please choose a JPG, PNG, or WebP image.');
+        fileInput.value = '';
+        return;
+      }
+
+      if (file.size > 5 * 1024 * 1024) {
+        alert('Wallpaper images must be 5 MB or smaller.');
+        fileInput.value = '';
+        return;
+      }
+
+      clearCustomFile();
+
+      selectedCustomFile = file;
+      selectedCustomPreviewUrl = URL.createObjectURL(file);
+
+      preview.style.backgroundImage =
+        `url("${selectedCustomPreviewUrl}")`;
+
+      fileInput.value = '';
+    };
+
+    overlay.querySelector('[data-browse]').onclick = () => {
+      fileInput.click();
+    };
+
     try {
       const response = await fetch('wallpapers.json');
-      if (!response.ok) throw new Error('Cannot load wallpapers.json');
+
+      if (!response.ok) {
+        throw new Error('Cannot load wallpapers.json');
+      }
 
       const files = await response.json();
-      if (!Array.isArray(files)) throw new Error('Invalid wallpaper list');
+
+      if (!Array.isArray(files)) {
+        throw new Error('Invalid wallpaper list');
+      }
+
+      if (!overlay.isConnected) return;
 
       select.innerHTML = '';
 
       for (const filename of files) {
-        if (typeof filename !== 'string' || /[/\\]/.test(filename)) {
+        if (
+          typeof filename !== 'string' ||
+          /[/\\]/.test(filename)
+        ) {
           continue;
         }
 
@@ -172,58 +261,35 @@
         select.appendChild(option);
       }
 
-    if (files.includes(selectedWallpaper)) {
-      select.value = selectedWallpaper;
-    } else {
-      select.value = DEFAULT_WALLPAPER;
-    }
+      if (isCustomWallpaper) {
+        const option = document.createElement('option');
+        option.value = '__custom__';
+        option.textContent = 'Custom Wallpaper';
 
-      
+        select.insertBefore(option, select.firstChild);
+        select.value = '__custom__';
 
-      selectedWallpaper = select.value;
-      if (selectedWallpaper) showPreview(selectedWallpaper);
+        preview.style.backgroundImage = currentWallpaper;
+      } else {
+        if (files.includes(selectedWallpaper)) {
+          select.value = selectedWallpaper;
+        } else {
+          select.value = DEFAULT_WALLPAPER;
+        }
 
+        selectedWallpaper = select.value;
+
+        if (selectedWallpaper) {
+          showPreview(selectedWallpaper);
+        }
+      }
     } catch (error) {
       console.error('Wallpaper list failed:', error);
-      select.innerHTML = '<option>Unable to load wallpapers</option>';
+
+      if (overlay.isConnected) {
+        select.innerHTML =
+          '<option value="">Unable to load wallpapers</option>';
+      }
     }
-
-    const fileInput = overlay.querySelector('[data-wallpaper-file]');
-
-    overlay.querySelector('[data-browse]').onclick = () => {
-      fileInput.click();
-    };
-
-    fileInput.onchange = () => {
-      const file = fileInput.files?.[0];
-      if (!file) return;
-
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-
-      if (!allowedTypes.includes(file.type)) {
-        alert('Please choose a JPG, PNG, or WebP image.');
-        fileInput.value = '';
-        return;
-      }
-
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Wallpaper images must be smaller than 5 MB.');
-        fileInput.value = '';
-        return;
-      }
-    
-      if (selectedCustomPreviewUrl) {
-        URL.revokeObjectURL(selectedCustomPreviewUrl);
-      }
-
-      selectedCustomFile = file;
-      selectedCustomPreviewUrl = URL.createObjectURL(file);
-
-      preview.style.backgroundImage =
-        `url("${selectedCustomPreviewUrl}")`;
-
-      fileInput.value = '';
-    };    
-
   };
 })();
