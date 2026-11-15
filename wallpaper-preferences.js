@@ -37,7 +37,20 @@ async function loadWallpaperPreference() {
     return;
   }
 
-  if (data?.wallpaper_type === 'preset' && data.wallpaper_value) {
+  if (data?.wallpaper_type === 'custom' && data.wallpaper_value) {
+    const desktop = document.getElementById('desktop');
+
+    if (desktop) {
+      desktop.style.setProperty(
+        '--desktop-wallpaper',
+        `url("${data.wallpaper_value}")`
+      );
+      desktop.classList.add('wallpaper-ready');
+    }
+  } else if (
+    data?.wallpaper_type === 'preset' &&
+    data.wallpaper_value
+  ) {
     setWallpaper(data.wallpaper_value);
   } else {
     setWallpaper(DEFAULT_WALLPAPER);
@@ -76,3 +89,78 @@ supabase.auth.onAuthStateChange(() => {
 });
 
 loadWallpaperPreference().catch(console.error);
+
+
+window.uploadCustomWallpaper = async function (file) {
+  const { data: { user }, error: authError } =
+    await supabase.auth.getUser();
+
+  if (authError || !user) {
+    throw new Error('You must be signed in to upload a wallpaper.');
+  }
+
+  // Validate the image.
+  const allowedTypes = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp'
+  };
+
+  const extension = allowedTypes[file.type];
+
+  if (!extension) {
+    throw new Error('Only JPG, PNG, and WebP images are supported.');
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error('Wallpaper must be 5 MB or smaller.');
+  }
+
+  // Each upload gets a unique filename to avoid browser caching.
+  const path = `${user.id}/${crypto.randomUUID()}.${extension}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('user-wallpapers')
+    .upload(path, file, {
+      contentType: file.type,
+      upsert: false
+    });
+
+  if (uploadError) throw uploadError;
+
+  const { data: urlData } = supabase.storage
+    .from('user-wallpapers')
+    .getPublicUrl(path);
+
+  const publicUrl = urlData.publicUrl;
+
+  // Save the custom wallpaper preference.
+  const { error: saveError } = await supabase
+    .from('user_wallpaper_preferences')
+    .upsert({
+      user_id: user.id,
+      wallpaper_type: 'custom',
+      wallpaper_value: publicUrl
+    }, { onConflict: 'user_id' });
+
+  if (saveError) {
+    // Remove the newly uploaded image if saving fails.
+    await supabase.storage
+      .from('user-wallpapers')
+      .remove([path]);
+
+    throw saveError;
+  }
+
+  // Apply the wallpaper immediately.
+  const desktop = document.getElementById('desktop');
+
+  if (desktop) {
+    desktop.style.setProperty(
+      '--desktop-wallpaper',
+      `url("${publicUrl}")`
+    );
+    desktop.classList.add('wallpaper-ready');
+  }
+};
+
