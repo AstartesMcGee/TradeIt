@@ -68,12 +68,12 @@
         `url("${wallpaperUrl(filename)}")`;
     }
 
-    function applyWallpaper() {
-      desktop.style.setProperty(
-        '--desktop-wallpaper',
-        `url("${wallpaperUrl(selectedWallpaper)}")`
-      );
-      desktop.classList.add('wallpaper-ready');
+    async function applyWallpaper() {
+      if (typeof window.saveWallpaperPreference !== 'function') {
+        throw new Error('Wallpaper preferences are still loading.');
+      }
+
+      await window.saveWallpaperPreference(selectedWallpaper);
     }
 
     function close() {
@@ -83,11 +83,32 @@
     overlay.querySelector('[data-close]').onclick = close;
     overlay.querySelector('[data-cancel]').onclick = close;
 
-    overlay.querySelector('[data-apply]').onclick = applyWallpaper;
+    async function saveSelection(closeAfterSave) {
+      const applyButton = overlay.querySelector('[data-apply]');
+      const okButton = overlay.querySelector('[data-ok]');
+
+      applyButton.disabled = true;
+      okButton.disabled = true;
+
+      try {
+        await applyWallpaper();
+
+        if (closeAfterSave) close();
+      } catch (error) {
+        console.error('Wallpaper save failed:', error);
+        alert(error.message || 'Could not save wallpaper.');
+      } finally {
+        applyButton.disabled = false;
+        okButton.disabled = false;
+      }
+    }
+
+    overlay.querySelector('[data-apply]').onclick = () => {
+      saveSelection(false);
+    };
 
     overlay.querySelector('[data-ok]').onclick = () => {
-      applyWallpaper();
-      close();
+      saveSelection(true);
     };
 
     select.onchange = () => {
