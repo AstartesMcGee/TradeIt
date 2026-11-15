@@ -119,3 +119,111 @@ dialog{padding:0;border:3px solid #0758c7;border-top:0;border-radius:7px 7px 3px
   background: #d5d5d5;
 }
 
+
+/* Windows XP Display Properties */
+
+#display-properties {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.12);
+  font-family: Tahoma, sans-serif;
+  font-size: 12px;
+}
+
+.display-properties-window {
+  width: min(420px, calc(100vw - 24px));
+  background: #ece9d8;
+  border: 3px solid #0054e3;
+  border-radius: 8px 8px 4px 4px;
+  box-shadow: 4px 6px 18px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  color: #222;
+}
+
+.display-properties-titlebar {
+  background: linear-gradient(#2785f5, #0054e3 55%, #003cbd);
+  color: white;
+  font-weight: bold;
+  padding: 7px 9px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.display-properties-titlebar button {
+  background: #d94b34;
+  border: 1px solid white;
+  border-radius: 3px;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.display-properties-content {
+  padding: 16px;
+}
+
+.display-properties-tabs {
+  border-bottom: 1px solid #aaa;
+  margin-bottom: 14px;
+}
+
+.display-properties-tabs span {
+  display: inline-block;
+  background: #fff;
+  border: 1px solid #aaa;
+  border-bottom: none;
+  padding: 5px 15px;
+  font-weight: bold;
+}
+
+.wallpaper-preview {
+  width: 230px;
+  height: 150px;
+  margin: 0 auto 18px;
+  padding: 12px 13px 22px;
+  background: linear-gradient(#d5d5d5, #777);
+  border: 5px solid #555;
+  border-radius: 10px;
+  box-sizing: border-box;
+}
+
+.wallpaper-preview-screen {
+  width: 100%;
+  height: 100%;
+  background-color: #3a8bd7;
+  background-position: center;
+  background-size: cover;
+}
+
+#wallpaper-select {
+  display: block;
+  width: 100%;
+  margin: 7px 0;
+  padding: 5px;
+}
+
+.wallpaper-browse {
+  text-align: right;
+  margin-top: 10px;
+}
+
+.display-properties-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #ccc;
+}
+
+.display-properties-actions button,
+.wallpaper-browse button {
+  font-family: Tahoma, sans-serif;
+  font-size: 12px;
+  padding: 5px 16px;
+  cursor: pointer;
+}
