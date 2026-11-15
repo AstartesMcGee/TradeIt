@@ -1,11 +1,15 @@
 
 (function () {
-  window.openDisplayProperties = function () {
+  const DEFAULT_WALLPAPER = 'glass-city.jpg';
+
+  window.openDisplayProperties = async function () {
     const existing = document.getElementById('display-properties');
     if (existing) {
-      existing.style.display = 'block';
-      return;
+      existing.remove();
     }
+
+    const desktop = document.getElementById('desktop');
+    if (!desktop) return;
 
     const overlay = document.createElement('div');
     overlay.id = 'display-properties';
@@ -29,7 +33,7 @@
 
           <label for="wallpaper-select">Background:</label>
           <select id="wallpaper-select">
-            <option value="">Current wallpaper</option>
+            <option value="">Loading wallpapers...</option>
           </select>
 
           <div class="wallpaper-browse">
@@ -49,31 +53,88 @@
 
     document.body.appendChild(overlay);
 
-    const close = () => overlay.remove();
+    const select = overlay.querySelector('#wallpaper-select');
+    const preview = overlay.querySelector('.wallpaper-preview-screen');
+
+    // Temporary selection state. Supabase will be added next.
+    let selectedWallpaper = DEFAULT_WALLPAPER;
+
+    function wallpaperUrl(filename) {
+      return 'wallpapers/' + encodeURIComponent(filename);
+    }
+
+    function showPreview(filename) {
+      preview.style.backgroundImage =
+        `url("${wallpaperUrl(filename)}")`;
+    }
+
+    function applyWallpaper() {
+      desktop.style.setProperty(
+        '--desktop-wallpaper',
+        `url("${wallpaperUrl(selectedWallpaper)}")`
+      );
+      desktop.classList.add('wallpaper-ready');
+    }
+
+    function close() {
+      overlay.remove();
+    }
 
     overlay.querySelector('[data-close]').onclick = close;
     overlay.querySelector('[data-cancel]').onclick = close;
-    overlay.querySelector('[data-ok]').onclick = close;
 
-    overlay.querySelector('[data-apply]').onclick = () => {
-      // Wallpaper changes will be connected next.
+    overlay.querySelector('[data-apply]').onclick = applyWallpaper;
+
+    overlay.querySelector('[data-ok]').onclick = () => {
+      applyWallpaper();
+      close();
     };
 
-    overlay.querySelector('[data-browse]').onclick = () => {
-      overlay.querySelector('[data-wallpaper-file]').click();
+    select.onchange = () => {
+      selectedWallpaper = select.value;
+      showPreview(selectedWallpaper);
     };
 
-    const desktop = document.getElementById('desktop');
-    const preview = overlay.querySelector('.wallpaper-preview-screen');
+    // Load the preset wallpapers from wallpapers.json.
+    try {
+      const response = await fetch('wallpapers.json');
+      if (!response.ok) throw new Error('Cannot load wallpapers.json');
 
-    if (desktop) {
-      preview.style.backgroundImage =
-        getComputedStyle(desktop).backgroundImage;
+      const files = await response.json();
+      if (!Array.isArray(files)) throw new Error('Invalid wallpaper list');
 
-      const wallpaper = getComputedStyle(desktop)
-        .getPropertyValue('--desktop-wallpaper').trim();
+      select.innerHTML = '';
 
-      if (wallpaper) preview.style.backgroundImage = wallpaper;
+      for (const filename of files) {
+        if (typeof filename !== 'string' || /[/\\]/.test(filename)) {
+          continue;
+        }
+
+        const option = document.createElement('option');
+        option.value = filename;
+        option.textContent = filename
+          .replace(/\.[^.]+$/, '')
+          .replace(/-/g, ' ')
+          .replace(/\b\w/g, c => c.toUpperCase());
+
+        select.appendChild(option);
+      }
+
+      if (files.includes(DEFAULT_WALLPAPER)) {
+        select.value = DEFAULT_WALLPAPER;
+      }
+
+      selectedWallpaper = select.value;
+      if (selectedWallpaper) showPreview(selectedWallpaper);
+
+    } catch (error) {
+      console.error('Wallpaper list failed:', error);
+      select.innerHTML = '<option>Unable to load wallpapers</option>';
     }
+
+    // Custom uploads will be connected to Supabase next.
+    overlay.querySelector('[data-browse]').onclick = () => {
+      alert('Custom wallpaper uploads are coming next!');
+    };
   };
 })();
