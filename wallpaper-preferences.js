@@ -3,10 +3,15 @@ import { supabase } from './supabase-client.js';
 
 const DEFAULT_WALLPAPER = 'glass-city.jpg';
 const BUCKET = 'user-wallpapers';
+const CACHE_KEY = 'tradeit.wallpaper.last.v1';
 
 let loadVersion = 0;
 
-function applyWallpaperUrl(url) {
+function presetUrl(filename) {
+  return 'wallpapers/' + encodeURIComponent(filename);
+}
+
+function applyWallpaperUrl(url, userId = null) {
   const desktop = document.getElementById('desktop');
   if (!desktop) return;
 
@@ -14,13 +19,20 @@ function applyWallpaperUrl(url) {
     '--desktop-wallpaper',
     `url("${url}")`
   );
+
   desktop.classList.add('wallpaper-ready');
+
+  if (userId && window.cacheTradeItWallpaper) {
+    window.cacheTradeItWallpaper(url, userId);
+  }
 }
 
-function applyPreset(filename) {
-  applyWallpaperUrl(
-    'wallpapers/' + encodeURIComponent(filename)
-  );
+function applyPreset(filename, userId = null) {
+  applyWallpaperUrl(presetUrl(filename), userId);
+}
+
+function clearCache() {
+  window.clearTradeItWallpaperCache?.();
 }
 
 function getCustomPath(url, userId) {
@@ -28,16 +40,19 @@ function getCustomPath(url, userId) {
 
   try {
     const parsed = new URL(url);
-    const marker = `/storage/v1/object/public/${BUCKET}/`;
-    const index = parsed.pathname.indexOf(marker);
+    const marker =
+      `/storage/v1/object/public/${BUCKET}/`;
 
+    const index = parsed.pathname.indexOf(marker);
     if (index === -1) return null;
 
     const path = decodeURIComponent(
       parsed.pathname.slice(index + marker.length)
     );
 
-    return path.startsWith(userId + '/') ? path : null;
+    return path.startsWith(userId + '/')
+      ? path
+      : null;
   } catch {
     return null;
   }
@@ -63,8 +78,24 @@ async function loadWallpaperPreference() {
   if (version !== loadVersion) return;
 
   if (authError || !user) {
+    clearCache();
     applyPreset(DEFAULT_WALLPAPER);
     return;
+  }
+
+  // Prevent a previous account's cached wallpaper
+  // from remaining visible after switching accounts.
+  try {
+    const cached = JSON.parse(
+      localStorage.getItem(CACHE_KEY)
+    );
+
+    if (cached && cached.userId !== user.id) {
+      clearCache();
+      applyPreset(DEFAULT_WALLPAPER);
+    }
+  } catch {
+    clearCache();
   }
 
   const { data, error } = await supabase
@@ -84,14 +115,14 @@ async function loadWallpaperPreference() {
     data?.wallpaper_type === 'custom' &&
     data.wallpaper_value
   ) {
-    applyWallpaperUrl(data.wallpaper_value);
+    applyWallpaperUrl(data.wallpaper_value, user.id);
   } else if (
     data?.wallpaper_type === 'preset' &&
     data.wallpaper_value
   ) {
-    applyPreset(data.wallpaper_value);
+    applyPreset(data.wallpaper_value, user.id);
   } else {
-    applyPreset(DEFAULT_WALLPAPER);
+    applyPreset(DEFAULT_WALLPAPER, user.id);
   }
 }
 
@@ -127,14 +158,16 @@ window.saveWallpaperPreference = async function (filename) {
     .upsert({
       user_id: user.id,
       wallpaper_type:
-        filename === DEFAULT_WALLPAPER ? 'default' : 'preset',
+        filename === DEFAULT_WALLPAPER
+          ? 'default'
+          : 'preset',
       wallpaper_value: filename
     }, { onConflict: 'user_id' });
 
   if (error) throw error;
 
   ++loadVersion;
-  applyPreset(filename);
+  applyPreset(filename, user.id);
 };
 
 window.listCustomWallpapers = async function () {
@@ -144,7 +177,10 @@ window.listCustomWallpapers = async function () {
     .from(BUCKET)
     .list(user.id, {
       limit: 1000,
-      sortBy: { column: 'created_at', order: 'desc' }
+      sortBy: {
+        column: 'created_at',
+        order: 'desc'
+      }
     });
 
   if (error) throw error;
@@ -181,7 +217,6 @@ window.saveExistingCustomWallpaper = async function (path) {
     throw new Error('Invalid wallpaper path.');
   }
 
-  // Verify that this image actually exists in the user's folder.
   const files = await window.listCustomWallpapers();
 
   const wallpaper = files.find(file => file.path === path);
@@ -201,7 +236,7 @@ window.saveExistingCustomWallpaper = async function (path) {
   if (error) throw error;
 
   ++loadVersion;
-  applyWallpaperUrl(wallpaper.url);
+  applyWallpaperUrl(wallpaper.url, user.id);
 
   return wallpaper;
 };
@@ -252,29 +287,40 @@ window.uploadCustomWallpaper = async function (file) {
     }, { onConflict: 'user_id' });
 
   if (saveError) {
-    // Preserve the image if cleanup fails, but never overwrite
-    // the existing wallpaper preference on an unsuccessful save.
-    await supabase.storage
+    const { error: cleanupError } = await supabase.storage
       .from(BUCKET)
-      .remove([path])
-      .catch(console.error);
+      .remove([path]);
+
+    if (cleanupError) {
+      console.error('Upload cleanup failed:', cleanupError);
+    }
 
     throw saveError;
   }
 
   ++loadVersion;
-  applyWallpaperUrl(publicUrl);
+  applyWallpaperUrl(publicUrl, user.id);
 
-  return { name: path.split('/').pop(), path, url: publicUrl };
+  return {
+    name: path.split('/').pop(),
+    path,
+    url: publicUrl
+  };
 };
 
 window.deleteCustomWallpaper = async function (path) {
   const user = await requireUser();
-  const preference = await window.getWallpaperPreference();
 
-  const activePath = preference.wallpaper_type === 'custom'
-    ? getCustomPath(preference.wallpaper_value, user.id)
-    : null;
+  const preference =
+    await window.getWallpaperPreference();
+
+  const activePath =
+    preference.wallpaper_type === 'custom'
+      ? getCustomPath(
+          preference.wallpaper_value,
+          user.id
+        )
+      : null;
 
   if (path === activePath) {
     throw new Error(
@@ -282,7 +328,8 @@ window.deleteCustomWallpaper = async function (path) {
     );
   }
 
-  const wallpapers = await window.listCustomWallpapers();
+  const wallpapers =
+    await window.listCustomWallpapers();
 
   if (!wallpapers.some(file => file.path === path)) {
     throw new Error('Wallpaper not found in your gallery.');
@@ -295,15 +342,26 @@ window.deleteCustomWallpaper = async function (path) {
   if (error) throw error;
 };
 
-supabase.auth.onAuthStateChange(() => {
+// Handle login, logout, and account switching.
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'INITIAL_SESSION') {
+    // The initial preference load below handles this.
+    return;
+  }
+
   ++loadVersion;
 
-  // Reset the desktop while the next account loads.
-  applyPreset(DEFAULT_WALLPAPER);
+  if (event === 'SIGNED_OUT' || !session?.user) {
+    clearCache();
+    applyPreset(DEFAULT_WALLPAPER);
+    return;
+  }
 
+  // Defer Supabase queries until outside the auth callback.
   setTimeout(() => {
     loadWallpaperPreference().catch(console.error);
   }, 0);
 });
 
+// Load the account's wallpaper on startup.
 loadWallpaperPreference().catch(console.error);
